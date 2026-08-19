@@ -36,7 +36,7 @@ libinput usec_t -> core uint64_t: usec_as_uint64_t(...)
 core uint64_t -> libinput usec_t: usec_from_uint64_t(...)
 ```
 
-The fixer is intentionally strict. It expects exactly the ten call sites exposed by the first real Ninja compile and refuses a partial or drifted transformation. Once the canonical replacement patch is regenerated after successful host validation, these temporary corrections should be folded into that single patch artifact.
+The fixer is intentionally strict but resumable. For each call-site family it verifies that the number of unfixed plus already-fixed occurrences equals the exact expected count, then converts only the remaining unfixed sites. This permits a partially corrected managed tree to resume while still rejecting source drift or a regex miss. Once the canonical replacement patch is regenerated after successful host validation, these temporary corrections should be folded into that single patch artifact.
 
 The base patch can be materialized with:
 
