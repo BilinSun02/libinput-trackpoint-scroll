@@ -16,14 +16,33 @@ if [ ! -f "$builddir/build.ninja" ]; then
     exit 1
 fi
 
-command -v ninja >/dev/null 2>&1 || {
-    echo "error: ninja not found" >&2
+for cmd in ninja ldconfig readelf; do
+    command -v "$cmd" >/dev/null 2>&1 || {
+        echo "error: $cmd not found" >&2
+        exit 1
+    }
+done
+
+buildlib=$(find "$builddir" -maxdepth 1 -type f -name 'libinput.so.*.*.*' -print | head -n 1)
+if [ -z "$buildlib" ] || [ ! -f "$buildlib" ]; then
+    echo "error: cannot find versioned libinput shared library in $builddir" >&2
     exit 1
-}
-command -v ldconfig >/dev/null 2>&1 || {
-    echo "error: ldconfig not found" >&2
+fi
+
+build_id=$(readelf -n "$buildlib" 2>/dev/null | awk '/Build ID:/ {print $3; exit}')
+soname=$(readelf -d "$buildlib" 2>/dev/null | sed -n 's/.*Library soname: \[\(.*\)\]/\1/p' | head -n 1)
+if [ -z "$build_id" ]; then
+    echo "error: cannot read Build ID from $buildlib" >&2
     exit 1
-}
+fi
+if [ -z "$soname" ]; then
+    echo "error: cannot read SONAME from $buildlib" >&2
+    exit 1
+fi
+
+echo "build library: $buildlib"
+echo "build SONAME:  $soname"
+echo "build ID:      $build_id"
 
 echo "installing replacement libinput from: $builddir"
 # Deliberately do not uninstall the previous /usr/local build first. Installing
@@ -60,18 +79,37 @@ if [ "$bad" -ne 0 ]; then
     exit 1
 fi
 
+selected=$(ldconfig -p | awk -v soname="$soname" '$1 == soname {print $NF; exit}')
+if [ -z "$selected" ]; then
+    echo "error: dynamic-loader cache does not resolve required SONAME $soname" >&2
+    exit 1
+fi
+if [ ! -e "$selected" ]; then
+    echo "error: loader-selected $soname path is missing: $selected" >&2
+    exit 1
+fi
+selected=$(readlink -f "$selected" 2>/dev/null || printf '%s' "$selected")
+selected_id=$(readelf -n "$selected" 2>/dev/null | awk '/Build ID:/ {print $3; exit}')
+if [ -z "$selected_id" ]; then
+    echo "error: cannot read Build ID from loader-selected library: $selected" >&2
+    exit 1
+fi
+
+echo "loader selects: $selected"
+echo "selected ID:    $selected_id"
+
+if [ "$selected_id" != "$build_id" ]; then
+    echo "error: loader-selected $soname does not match the library just built" >&2
+    echo "       build ID:    $build_id" >&2
+    echo "       selected ID: $selected_id" >&2
+    echo "       DO NOT restart the graphical session or reboot." >&2
+    exit 1
+fi
+
 if command -v libinput >/dev/null 2>&1; then
     echo "libinput CLI: $(command -v libinput)"
     libinput --version || true
-    resolved_cli=$(ldd "$(command -v libinput)" 2>/dev/null | awk '/libinput\.so/ {print $3; exit}')
-    if [ -n "$resolved_cli" ]; then
-        if [ ! -e "$resolved_cli" ]; then
-            echo "error: libinput CLI resolves libinput to missing path: $resolved_cli" >&2
-            exit 1
-        fi
-        echo "libinput CLI resolves shared library to: $resolved_cli"
-    fi
 fi
 
-echo "install verification passed"
+echo "install verification passed: loader-selected $soname matches the build ID"
 echo "safe to restart the graphical session or reboot"
