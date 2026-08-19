@@ -2,7 +2,7 @@
 
 Production patches in this repository are complete replacement patches against the pinned pristine source revision, not incremental patches against another project version.
 
-The authoritative current upstream URL/version/commit live in the root-level `UPSTREAM` file. Current-line documentation and automation should refer to that file rather than duplicate the pin.
+The authoritative current upstream URL/version/commit live in the root-level `UPSTREAM` file. Current-line documentation and automation should refer readers to that file rather than duplicate the pin.
 
 ## 0.0.14 behavioral baseline
 
@@ -36,7 +36,7 @@ libinput usec_t -> core uint64_t: usec_as_uint64_t(...)
 core uint64_t -> libinput usec_t: usec_from_uint64_t(...)
 ```
 
-The fixer is intentionally strict but resumable. For each call-site family it verifies that the number of unfixed plus already-fixed occurrences equals the exact expected count, then converts only the remaining unfixed sites. This permits a partially corrected managed tree to resume while still rejecting source drift or a regex miss. Once the canonical replacement patch is regenerated after successful host validation, these temporary corrections should be folded into that single patch artifact.
+The fixer is intentionally strict but resumable. Call-site multiplicities are pinned to the exact upstream commit under `compat/libinput/<LIBINPUT_COMMIT>/`; structural matching validates each family and converts only remaining unfixed sites. A re-pin without reviewed compatibility data fails closed. Once the canonical replacement patch is regenerated after successful host validation, these temporary corrections should be folded into that single patch artifact.
 
 The base patch can be materialized with:
 
@@ -72,19 +72,18 @@ Unlike 0.0.14, it removes the duplicated startup/coalescing/ring/memoryless-prof
 - shared-core strict C11 tests and ASan/UBSan runs passed;
 - standalone 0.0.14-vs-core trace comparison passed for affine, quadratic, and hyperbolic behavior, including startup/coalescing, overlap, idle rearm, and Shift-style startup-bypass restart;
 - the integration-owned custom block passed a strict mock-host C syntax check;
-- the first real Meson configure exposed and localized the split-assignment syntax error, now corrected by the explicit Meson fixup patch;
-- the first real Ninja compile exposed the `usec_t`/`uint64_t` adapter mismatch, now corrected explicitly at the integration boundary without changing the core API.
+- real Meson configuration succeeded after correcting the generated dependency assignment;
+- real Ninja compilation succeeded after correcting the explicit `usec_t`/`uint64_t` adapter boundary;
+- the resulting core-backed library booted into the normal desktop successfully after reinstall;
+- an initial several-minute interactive TrackPoint scrolling smoke test matched intended behavior.
 
-### Validation still required before calling 0.1.0 release-complete
+### Unresolved installation incident
 
-After applying the current complete patch set, these remain mandatory:
+The first normal reboot after replacing the old 0.0.14 installation failed to load the desktop, with symptoms resembling a missing libinput installation. After recovery-mode uninstall/reinstall cycles, reinstalling the same core-backed build and rebooting normally succeeded. This does **not** reproduce as a deterministic runtime failure of the candidate.
 
-```text
-successful Ninja compile
-interactive behavioral smoke test
-```
+The exact cause is not established. `ldconfig`/loader state is a plausible hypothesis but must not be recorded as fact without journal or loader evidence from the failed boot.
 
-Do not describe the 0.1.0 candidate as fully release-validated until those checks pass.
+The supported replacement workflow therefore installs the new build directly over the existing `/usr/local` build, runs `ldconfig`, verifies loader-visible shared-object paths, and only then advises restarting the graphical session. See `tools/install-managed-libinput.sh` and `docs/BUILD_AND_INSTALL.md`.
 
 ## Release checklist
 
@@ -97,6 +96,7 @@ git diff --check
 Meson configure
 Ninja compile
 behavioral smoke test
+safe install/loader verification
 ```
 
-Record the patch SHA-256, exact core gitlink, and the `UPSTREAM` state used by that patch.
+Record the patch SHA-256, exact core gitlink, and the `UPSTREAM` state used by that patch. Preserve unresolved incidents as unresolved until evidence identifies a cause.
