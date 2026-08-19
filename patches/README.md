@@ -17,27 +17,26 @@ Project version **0.0.14** corresponds to that historical v14 distribution. It i
 
 ## 0.1.0 core-backed candidate
 
-The first core-backed replacement candidate is currently represented by a base patch plus a small Meson syntax correction:
+The first core-backed replacement candidate is currently represented by a base patch plus two narrowly scoped integration corrections:
 
 ```text
 patches/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch.gz
 patches/libinput-1.31.0-trackpoint-scroll-core-v0.1.0-meson-fix.patch
+tools/fix-0.1.0-usec-boundary.py
 ```
 
-`tools/prepare-libinput-tree.sh` applies both in order and is the authoritative managed-source preparation path. Do not apply only the compressed base patch and assume the resulting tree is the current corrected candidate.
+`tools/prepare-libinput-tree.sh` applies/validates these in order and is the authoritative managed-source preparation path. Do not apply only the compressed base patch and assume the resulting tree is the current corrected candidate.
 
-The Meson fix exists because the initial base patch split an assignment across a bare newline:
+The Meson fix exists because the initial base patch split an assignment across a bare newline. Meson rejects that form; the correction keeps the dependency assignment on one statement.
 
-```meson
-dep_trackpoint_scroll_core =
-    trackpoint_scroll_core.get_variable('core_dep')
+The timestamp-boundary fixer exists because libinput deliberately defines `usec_t` as a strong newtype, while the platform-neutral core deliberately accepts plain `uint64_t` microsecond timestamps. The adapter must therefore convert explicitly:
+
+```text
+libinput usec_t -> core uint64_t: usec_as_uint64_t(...)
+core uint64_t -> libinput usec_t: usec_from_uint64_t(...)
 ```
 
-Meson rejects that form. The correction keeps the assignment on one statement:
-
-```meson
-dep_trackpoint_scroll_core = trackpoint_scroll_core.get_variable('core_dep')
-```
+The fixer is intentionally strict. It expects exactly the ten call sites exposed by the first real Ninja compile and refuses a partial or drifted transformation. Once the canonical replacement patch is regenerated after successful host validation, these temporary corrections should be folded into that single patch artifact.
 
 The base patch can be materialized with:
 
@@ -73,15 +72,15 @@ Unlike 0.0.14, it removes the duplicated startup/coalescing/ring/memoryless-prof
 - shared-core strict C11 tests and ASan/UBSan runs passed;
 - standalone 0.0.14-vs-core trace comparison passed for affine, quadratic, and hyperbolic behavior, including startup/coalescing, overlap, idle rearm, and Shift-style startup-bypass restart;
 - the integration-owned custom block passed a strict mock-host C syntax check;
-- the first real Meson configure attempt exposed and localized the split-assignment syntax error, now corrected by the explicit Meson fixup patch.
+- the first real Meson configure exposed and localized the split-assignment syntax error, now corrected by the explicit Meson fixup patch;
+- the first real Ninja compile exposed the `usec_t`/`uint64_t` adapter mismatch, now corrected explicitly at the integration boundary without changing the core API.
 
 ### Validation still required before calling 0.1.0 release-complete
 
 After applying the current complete patch set, these remain mandatory:
 
 ```text
-successful Meson configure
-Ninja compile
+successful Ninja compile
 interactive behavioral smoke test
 ```
 
