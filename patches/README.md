@@ -17,30 +17,46 @@ Project version **0.0.14** corresponds to that historical v14 distribution. It i
 
 ## 0.1.0 core-backed candidate
 
-The first core-backed replacement patch is stored compressed as:
+The first core-backed replacement candidate is currently represented by a base patch plus a small Meson syntax correction:
 
 ```text
 patches/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch.gz
+patches/libinput-1.31.0-trackpoint-scroll-core-v0.1.0-meson-fix.patch
 ```
 
-Materialize it with:
+`tools/prepare-libinput-tree.sh` applies both in order and is the authoritative managed-source preparation path. Do not apply only the compressed base patch and assume the resulting tree is the current corrected candidate.
+
+The Meson fix exists because the initial base patch split an assignment across a bare newline:
+
+```meson
+dep_trackpoint_scroll_core =
+    trackpoint_scroll_core.get_variable('core_dep')
+```
+
+Meson rejects that form. The correction keeps the assignment on one statement:
+
+```meson
+dep_trackpoint_scroll_core = trackpoint_scroll_core.get_variable('core_dep')
+```
+
+The base patch can be materialized with:
 
 ```bash
 gzip -dc patches/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch.gz \
   > /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch
 ```
 
-Checksums:
+Checksums for the unchanged historical base candidate artifact:
 
 ```text
-uncompressed patch:
+uncompressed base patch:
 8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016
 
 stored gzip:
 8410949b4a8e12bb0a364657480615f787715ed07f96fd541ba8ee19aca04e74
 ```
 
-The patch is tied to core gitlink:
+The candidate is tied to core gitlink:
 
 ```text
 133df50ea5ce58e71e3fed3240c26999ee689386
@@ -50,20 +66,21 @@ Unlike 0.0.14, it removes the duplicated startup/coalescing/ring/memoryless-prof
 
 ### Validation completed for the candidate
 
-- complete replacement patch against the pristine revision recorded by `LIBINPUT_COMMIT` in `UPSTREAM`;
+- base replacement patch against the pristine revision recorded by `LIBINPUT_COMMIT` in `UPSTREAM`;
 - old-side/context inheritance checked against the exact 0.0.14 patch, with separately verified upstream Meson/include context;
 - `git apply --check`, `git apply`, and `git diff --check` passed on the reconstructed pristine source map;
 - stale-inline scan confirmed the old grid/ring/accelerator state is not duplicated in the new integration;
 - shared-core strict C11 tests and ASan/UBSan runs passed;
 - standalone 0.0.14-vs-core trace comparison passed for affine, quadratic, and hyperbolic behavior, including startup/coalescing, overlap, idle rearm, and Shift-style startup-bypass restart;
-- the integration-owned custom block passed a strict mock-host C syntax check.
+- the integration-owned custom block passed a strict mock-host C syntax check;
+- the first real Meson configure attempt exposed and localized the split-assignment syntax error, now corrected by the explicit Meson fixup patch.
 
 ### Validation still required before calling 0.1.0 release-complete
 
-The current execution environment did not have Meson and could not install it from the network. Therefore these remain mandatory on a real pristine checkout:
+After applying the current complete patch set, these remain mandatory:
 
 ```text
-Meson configure
+successful Meson configure
 Ninja compile
 interactive behavioral smoke test
 ```
@@ -72,7 +89,7 @@ Do not describe the 0.1.0 candidate as fully release-validated until those check
 
 ## Release checklist
 
-A patch is production-ready only after:
+A patch set is production-ready only after:
 
 ```text
 pristine exact upstream checkout
