@@ -31,7 +31,7 @@ fi
 
 if [ -n "$(git -C "$tree" status --porcelain)" ]; then
     # A previously applied project patch is allowed; arbitrary local edits are not.
-    "$script_dir/materialize-0.1.0-patch.sh" "$patch" >/dev/null
+    sh "$script_dir/materialize-0.1.0-patch.sh" "$patch" >/dev/null
     if git -C "$tree" apply --reverse --check "$patch" >/dev/null 2>&1; then
         echo "existing patched tree detected"
     else
@@ -54,8 +54,8 @@ if [ "$actual" != "$UPSTREAM_COMMIT" ]; then
     exit 1
 fi
 
-"$script_dir/link-core-subproject.sh" "$tree"
-"$script_dir/materialize-0.1.0-patch.sh" "$patch"
+sh "$script_dir/link-core-subproject.sh" "$tree"
+sh "$script_dir/materialize-0.1.0-patch.sh" "$patch"
 
 if git -C "$tree" apply --reverse --check "$patch" >/dev/null 2>&1; then
     echo "0.1.0 patch already applied"
