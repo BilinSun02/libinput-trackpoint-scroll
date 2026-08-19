@@ -1,0 +1,13 @@
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -457,8 +457,7 @@ if dep_lua.found()
+ endif
+ 
+ trackpoint_scroll_core = subproject('trackpoint-scroll-core')
+-dep_trackpoint_scroll_core =
+-	trackpoint_scroll_core.get_variable('core_dep')
++dep_trackpoint_scroll_core = trackpoint_scroll_core.get_variable('core_dep')
+ 
+ deps_libinput = [
+ 	dep_mtdev,
