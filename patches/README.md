@@ -2,11 +2,7 @@
 
 Production patches in this repository are complete replacement patches against the pinned pristine source revision, not incremental patches against another project version.
 
-Current upstream target:
-
-```text
-659967488e1e66d7fb7210c6b86860c8e1e5bed4
-```
+The authoritative current upstream URL/version/commit live in the root-level `UPSTREAM` file. Current-line documentation and automation should refer to that file rather than duplicate the pin.
 
 ## 0.0.14 behavioral baseline
 
@@ -54,7 +50,7 @@ Unlike 0.0.14, it removes the duplicated startup/coalescing/ring/memoryless-prof
 
 ### Validation completed for the candidate
 
-- complete replacement patch against the same pinned pristine revision;
+- complete replacement patch against the pristine revision recorded by `LIBINPUT_COMMIT` in `UPSTREAM`;
 - old-side/context inheritance checked against the exact 0.0.14 patch, with separately verified upstream Meson/include context;
 - `git apply --check`, `git apply`, and `git diff --check` passed on the reconstructed pristine source map;
 - stale-inline scan confirmed the old grid/ring/accelerator state is not duplicated in the new integration;
@@ -87,4 +83,4 @@ Ninja compile
 behavioral smoke test
 ```
 
-Record the patch SHA-256 and exact core gitlink used by that patch.
+Record the patch SHA-256, exact core gitlink, and the `UPSTREAM` state used by that patch.
