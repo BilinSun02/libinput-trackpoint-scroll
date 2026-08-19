@@ -77,13 +77,19 @@ Unlike 0.0.14, it removes the duplicated startup/coalescing/ring/memoryless-prof
 - the resulting core-backed library booted into the normal desktop successfully after reinstall;
 - an initial several-minute interactive TrackPoint scrolling smoke test matched intended behavior.
 
-### Unresolved installation incident
+### Confirmed installation/loader incident
 
-The first normal reboot after replacing the old 0.0.14 installation failed to load the desktop, with symptoms resembling a missing libinput installation. After recovery-mode uninstall/reinstall cycles, reinstalling the same core-backed build and rebooting normally succeeded. This does **not** reproduce as a deterministic runtime failure of the candidate.
+The first normal reboot after replacing the old 0.0.14 installation failed because the dynamic loader could not resolve `libinput.so.10`. The failed-boot journal contains repeated errors from both GNOME Shell and the Xorg libinput driver of the form:
 
-The exact cause is not established. `ldconfig`/loader state is a plausible hypothesis but must not be recorded as fact without journal or loader evidence from the failed boot.
+```text
+error while loading shared libraries: libinput.so.10: cannot open shared object file: No such file or directory
+```
 
-The supported replacement workflow therefore installs the new build directly over the existing `/usr/local` build, runs `ldconfig`, verifies loader-visible shared-object paths, and only then advises restarting the graphical session. See `tools/install-managed-libinput.sh` and `docs/BUILD_AND_INSTALL.md`.
+This establishes that the desktop failure was an install/loader-state failure, not a deterministic crash in the core-backed scrolling implementation. The historical journal alone does not distinguish whether the shared object/symlink was physically absent or present but not visible through the loader search/cache at that moment.
+
+After recovery-mode reinstall cycles, installing the same core-backed build again and rebooting normally succeeded, and interactive scrolling behaved as intended.
+
+The supported replacement workflow therefore installs the new build directly over the existing `/usr/local` build, runs `ldconfig`, verifies loader-visible shared-object paths, and only then advises restarting the graphical session. Do not use `ninja uninstall` as the normal first step when replacing one compatible project build with another. See `tools/install-managed-libinput.sh` and `docs/BUILD_AND_INSTALL.md`.
 
 ## Release checklist
 
@@ -99,4 +105,4 @@ behavioral smoke test
 safe install/loader verification
 ```
 
-Record the patch SHA-256, exact core gitlink, and the `UPSTREAM` state used by that patch. Preserve unresolved incidents as unresolved until evidence identifies a cause.
+Record the patch SHA-256, exact core gitlink, and the `UPSTREAM` state used by that patch.
