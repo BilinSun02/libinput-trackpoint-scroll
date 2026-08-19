@@ -4,17 +4,27 @@ import re
 import sys
 
 
-def replace_expected(text, label, pattern, replacement, expected):
-    regex = re.compile(pattern, re.MULTILINE | re.DOTALL)
-    matches = list(regex.finditer(text))
-    count = len(matches)
-    if count == 0:
-        return text, 0
-    if count != expected:
+FLAGS = re.MULTILINE | re.DOTALL
+
+
+def fix_family(text, label, unfixed_pattern, fixed_pattern, replacement, expected):
+    unfixed = re.compile(unfixed_pattern, FLAGS)
+    fixed = re.compile(fixed_pattern, FLAGS)
+
+    unfixed_count = len(list(unfixed.finditer(text)))
+    fixed_count = len(list(fixed.finditer(text)))
+    total = unfixed_count + fixed_count
+
+    if total != expected:
         raise RuntimeError(
-            f"{label}: expected either 0 (already fixed) or {expected} unfixed occurrence(s), found {count}"
+            f"{label}: expected {expected} total site(s), found "
+            f"{unfixed_count} unfixed + {fixed_count} fixed"
         )
-    return regex.sub(replacement, text), count
+
+    if unfixed_count:
+        text = unfixed.sub(replacement, text)
+
+    return text, unfixed_count
 
 
 def main():
@@ -31,81 +41,86 @@ def main():
     text = path.read_text()
     changed = 0
 
+    # Each family describes one or more exact adapter boundary crossings.
+    # Validate both forms: a site may already be fixed, but a regex miss must
+    # never be mistaken for an already-fixed site.
     fixes = [
         (
             "adaptive filter_dispatch timestamp",
             r"(filter_dispatch\(state->adaptive\.filter,\s*state->device,\s*[^,]+,\s*)time_us(\s*\))",
+            r"filter_dispatch\(state->adaptive\.filter,\s*state->device,\s*[^,]+,\s*usec_from_uint64_t\(time_us\)\s*\)",
             r"\1usec_from_uint64_t(time_us)\2",
             1,
         ),
         (
             "adaptive filter_restart timestamp",
             r"filter_restart\(state->adaptive\.filter,\s*state->device,\s*time_us\s*\)",
+            r"filter_restart\(state->adaptive\.filter,\s*state->device,\s*usec_from_uint64_t\(time_us\)\s*\)",
             r"filter_restart(state->adaptive.filter, state->device, usec_from_uint64_t(time_us))",
             1,
         ),
         (
             "core restart timestamp",
             r"(tpsc_engine_restart\(\s*state->engine,\s*)time(\s*,\s*TPSC_RESTART_BYPASS_STARTUP\s*\))",
+            r"tpsc_engine_restart\(\s*state->engine,\s*usec_as_uint64_t\(time\)\s*,\s*TPSC_RESTART_BYPASS_STARTUP\s*\)",
             r"\1usec_as_uint64_t(time)\2",
             1,
         ),
         (
             "core begin timestamps",
             r"tpsc_engine_begin\(state->engine,\s*time\s*\)",
+            r"tpsc_engine_begin\(state->engine,\s*usec_as_uint64_t\(time\)\s*\)",
             r"tpsc_engine_begin(state->engine, usec_as_uint64_t(time))",
             2,
         ),
         (
             "core feed timestamp",
             r"tpsc_engine_feed\(state->engine,\s*time,\s*input\s*\)",
+            r"tpsc_engine_feed\(state->engine,\s*usec_as_uint64_t\(time\),\s*input\s*\)",
             r"tpsc_engine_feed(state->engine, usec_as_uint64_t(time), input)",
             1,
         ),
         (
             "core tick timestamp",
             r"tpsc_engine_tick\(state->engine,\s*time,\s*&output\s*\)",
+            r"tpsc_engine_tick\(state->engine,\s*usec_as_uint64_t\(time\),\s*&output\s*\)",
             r"tpsc_engine_tick(state->engine, usec_as_uint64_t(time), &output)",
             1,
         ),
         (
             "core end timestamp",
             r"tpsc_engine_end\(state->engine,\s*time\s*\)",
+            r"tpsc_engine_end\(state->engine,\s*usec_as_uint64_t\(time\)\s*\)",
             r"tpsc_engine_end(state->engine, usec_as_uint64_t(time))",
             1,
         ),
         (
             "logical tick interval newtype",
             r"usec_add\(time,\s*tpsc_engine_tick_us\(state->engine\)\s*\)",
+            r"usec_add\(time,\s*usec_from_uint64_t\(tpsc_engine_tick_us\(state->engine\)\)\s*\)",
             r"usec_add(time, usec_from_uint64_t(tpsc_engine_tick_us(state->engine)))",
             2,
         ),
     ]
 
-    for label, pattern, replacement, expected in fixes:
-        text, n = replace_expected(text, label, pattern, replacement, expected)
+    for label, unfixed, fixed, replacement, expected in fixes:
+        text, n = fix_family(
+            text, label, unfixed, fixed, replacement, expected
+        )
         changed += n
 
-    # The original compiler failure contains ten bad boundary crossings. If we
-    # changed anything, require all ten to have been present so a drifted patch
-    # cannot be silently half-fixed.
-    if changed not in (0, 10):
-        raise RuntimeError(f"expected 0 or 10 total timestamp-boundary fixes, applied {changed}")
-
-    # Verify the corrected forms are present in the expected quantities.
-    checks = [
-        (r"usec_from_uint64_t\(time_us\)", 2, "uint64_t -> usec_t conversions"),
-        (r"usec_as_uint64_t\(time\)", 6, "usec_t -> uint64_t timestamp conversions"),
-        (r"usec_from_uint64_t\(tpsc_engine_tick_us\(state->engine\)\)", 2, "tick-period conversions"),
-    ]
-    for pattern, minimum, label in checks:
-        count = len(re.findall(pattern, text))
-        if count < minimum:
-            raise RuntimeError(f"{label}: expected at least {minimum}, found {count}")
+    # All ten boundary crossings must now be in their corrected form. The
+    # per-family checks above prove that none disappeared because of source
+    # drift or a regex miss, while allowing partially-fixed trees to resume.
+    expected_total = sum(item[-1] for item in fixes)
+    if expected_total != 10:
+        raise RuntimeError(
+            f"internal error: timestamp-boundary table describes {expected_total} sites, expected 10"
+        )
 
     if changed:
         path.write_text(text)
-        print(f"applied {changed} libinput/core timestamp-boundary fixes")
+        print(f"applied {changed} remaining libinput/core timestamp-boundary fix(es)")
     else:
         print("libinput/core timestamp boundary already fixed")
 
