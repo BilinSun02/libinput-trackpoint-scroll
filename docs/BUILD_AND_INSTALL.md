@@ -52,9 +52,10 @@ The script performs these steps:
 4. checks out the pinned commit in detached-HEAD state;
 5. exposes `core/` as `subprojects/trackpoint-scroll-core` in the managed checkout;
 6. materializes and SHA-256-verifies the 0.1.0 patch into `.work/`;
-7. checks and applies that patch;
-8. runs `git diff --check`;
-9. prints the Meson/Ninja commands for the prepared tree.
+7. checks and applies that patch and the current integration fixups;
+8. validates commit-specific source-shape expectations under `compat/libinput/<LIBINPUT_COMMIT>/`;
+9. runs `git diff --check`;
+10. prints the Meson/Ninja commands for the prepared tree.
 
 For testing a mirror or another transport without changing the project pin:
 
@@ -66,7 +67,7 @@ That override changes only where Git fetches the pinned commit from; `UPSTREAM` 
 
 The managed tree is deliberately disposable. Remove `.work/libinput/` to recreate it from scratch.
 
-The script does **not** silently reset an unrecognized dirty checkout. Re-running it is supported when the tree contains the project patch and ordinary untracked build output; if tracked changes do not match the expected 0.1.0 patch, it exits and asks the user to preserve or remove them explicitly.
+The script does **not** silently reset an unrecognized dirty checkout. Re-running it is supported when the tree contains the project patch and ordinary untracked build output; if tracked changes do not match the expected 0.1.0 patch set, it exits and asks the user to preserve or remove them explicitly.
 
 After preparation, the default build commands are:
 
@@ -146,28 +147,44 @@ Build:
 ninja -C builddir
 ```
 
-The real checkout/compiler are authoritative. Earlier development exposed two reasons not to substitute synthetic patch validation for this step:
+The real checkout/compiler are authoritative. Earlier development exposed several reasons not to substitute synthetic patch validation for this step: malformed generated Meson syntax, symbol collisions, and libinput's strong `usec_t` type were all caught only by the real host toolchain.
 
-1. a malformed hunk could validate against a synthetic preimage that repeated the same mistake;
-2. a custom helper collided with an existing symbol and only a real compile exposed it.
+## Install and replace safely
 
-The current 0.1.0 candidate has passed algorithm/static checks but has **not** yet completed this real Meson/Ninja integration build in the environment where it was generated. Treat this build as mandatory release validation.
+The established install prefix is `/usr/local`.
 
-## Install
+When replacing one project build with another build using the same prefix/ABI, **do not run `ninja uninstall` first**. Installing the replacement directly avoids an unnecessary interval where `/usr/local` may contain no usable libinput at all.
 
-The established install prefix is `/usr/local`:
+For the managed tree, the recommended path is the verified installer:
+
+```bash
+sudo sh ./tools/install-managed-libinput.sh
+```
+
+It performs, in order:
+
+1. `ninja install` from `.work/libinput/builddir`;
+2. `ldconfig`;
+3. verification that loader-visible `libinput.so*` paths resolve to real files;
+4. a best-effort check of which shared library the installed `libinput` CLI resolves.
+
+It prints `install verification passed` before advising that it is safe to restart the graphical session or reboot.
+
+For a manually managed build directory, pass it explicitly:
+
+```bash
+sudo sh ./tools/install-managed-libinput.sh /path/to/builddir
+```
+
+The equivalent manual sequence is:
 
 ```bash
 sudo ninja -C builddir install
 sudo ldconfig
+ldconfig -p | grep 'libinput\.so'
 ```
 
-For the managed tree, use:
-
-```bash
-sudo ninja -C .work/libinput/builddir install
-sudo ldconfig
-```
+Use `ninja uninstall` only when you intentionally want to remove that build, not as the normal first step of an upgrade/replacement.
 
 Inspect which library is selected:
 
@@ -185,6 +202,33 @@ grep -F libinput "/proc/$(pgrep -n gnome-shell)/maps" | sort -u
 ```
 
 When debugging, a build-tree executable is preferable because its RPATH reduces ambiguity about which library it loads.
+
+### If the graphical session fails after an install
+
+Do not immediately destroy the failed boot's evidence. From a TTY or recovery shell, first record the boot list:
+
+```bash
+journalctl --list-boots
+```
+
+Then inspect the failed boot by its listed boot offset or boot ID, for example:
+
+```bash
+journalctl -b -3 -p err..alert --no-pager | \
+  grep -Ei 'libinput|gnome-shell|mutter|gdm|shared object|undefined symbol'
+
+journalctl -b -3 -u display-manager --no-pager
+```
+
+`-3` is only an example; select the actual failed boot from `journalctl --list-boots`.
+
+Also capture:
+
+```bash
+ldconfig -p | grep 'libinput\.so'
+```
+
+A missing shared object points toward installation/loader state; an `undefined symbol` or compositor crash after loading the library points toward an ABI/runtime problem.
 
 ## Runtime configuration reload
 
