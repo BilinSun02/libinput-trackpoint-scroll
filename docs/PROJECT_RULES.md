@@ -13,13 +13,18 @@ Porting handoff documents are the intended exception. Durable conclusions from p
 - Do not create duplicate implementations of the same algorithm in both repositories after a feature has been migrated.
 - Avoid chronicles for their own sake. Record current behavior, rationale that prevents regressions, failed design classes that remain relevant, and migration constraints.
 
+## Upstream pin discipline
+
+The root-level `UPSTREAM` file is the single source of truth for the current development line's upstream libinput repository URL, version, and commit.
+
+- Automation that needs the current pin must source or parse `UPSTREAM`; do not embed another current commit/version literal in scripts.
+- Human-facing documentation that describes the current target should refer readers to `UPSTREAM` rather than duplicate the pin.
+- Historical release records may retain their immutable historical target metadata because that describes the release, not the current development pin.
+- Re-pinning upstream requires changing `UPSTREAM` first, then validating/regenerating any version-specific patches or artifacts whose contents inherently depend on that upstream revision.
+
 ## Production patch discipline
 
-Every production patch is pinned to an explicit upstream commit. For the current line that commit is:
-
-```text
-659967488e1e66d7fb7210c6b86860c8e1e5bed4
-```
+Every production patch is pinned to an explicit upstream commit. For the current line, that commit is `LIBINPUT_COMMIT` from `UPSTREAM`.
 
 A production patch must be generated against a real pristine checkout of that revision. Before release:
 
