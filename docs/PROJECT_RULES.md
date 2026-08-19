@@ -20,7 +20,9 @@ The root-level `UPSTREAM` file is the single source of truth for the current dev
 - Automation that needs the current pin must source or parse `UPSTREAM`; do not embed another current commit/version literal in scripts.
 - Human-facing documentation that describes the current target should refer readers to `UPSTREAM` rather than duplicate the pin.
 - Historical release records may retain their immutable historical target metadata because that describes the release, not the current development pin.
-- Re-pinning upstream requires changing `UPSTREAM` first, then validating/regenerating any version-specific patches or artifacts whose contents inherently depend on that upstream revision.
+- Upstream-source-shape expectations must be keyed by commit under `compat/libinput/<LIBINPUT_COMMIT>/`; scripts must not silently reuse counts or assumptions validated against another libinput revision.
+- A re-pin is intentionally incomplete until the new commit has its own reviewed compatibility/expectations data. Missing commit-specific data must fail closed rather than inheriting the previous pin's assumptions.
+- Re-pinning upstream requires changing `UPSTREAM` first, then validating/regenerating any version-specific patches, compatibility manifests, or artifacts whose contents inherently depend on that upstream revision.
 
 ## Production patch discipline
 
