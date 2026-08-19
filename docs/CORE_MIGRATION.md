@@ -17,7 +17,7 @@ subprojects/trackpoint-scroll-core
 The helper does this with a symlink rather than copying source:
 
 ```bash
-./tools/link-core-subproject.sh /path/to/libinput-source
+sh ./tools/link-core-subproject.sh /path/to/libinput-source
 ```
 
 The shared `meson.build` defines `core_dep`; the libinput Meson patch should obtain that dependency from the subproject and link it into the library target. This keeps the source of the reusable engine single and makes the recorded gitlink part of build reproducibility.
@@ -120,9 +120,13 @@ A zero-output cleanup tick is valid: expiration occurs before pending activation
 - Middle gesture start: call `tpsc_engine_begin()` before accepting motion.
 - Physical release: call `tpsc_engine_end()` and cancel timer work; do not drain the remaining tail.
 - Idle rearm is owned internally by the core feed logic.
-- Mode switch: end/reset the old core sequence, discard old-policy shares, reset libinput buildup/direction, then begin a fresh core sequence for post-switch motion.
+- Mode switch: stop an already public sequence if necessary, cancel timer work, reset libinput buildup/direction, then call `tpsc_engine_restart(engine, time, TPSC_RESTART_BYPASS_STARTUP)`.
 
-The startup merge window begins on the first raw report after begin/reset, not at middle-button press itself.
+The bypass restart is important for behavioral equivalence with v14. A mode switch discards pre-switch shares and resets stateful transform history, but it does **not** turn the first post-switch motion report into another fixed startup step. That next report enters sustained reconstruction directly, with its first interval measured from the mode-switch timestamp.
+
+`TPSC_RESTART_REARM_STARTUP` exists for higher-level policies that deliberately want a new startup episode without ending the surrounding gesture; it should not be used for the current Shift mode switch.
+
+For a normal gesture start or idle-rearmed burst, the startup merge window begins on the first raw motion report, not at middle-button press itself.
 
 ## Equivalence tests before replacing v14
 
@@ -137,6 +141,6 @@ Before a core-backed patch supersedes v14, replay deterministic raw traces throu
 - affine/quadratic/hyperbolic transformed output;
 - idle rearm at 333.3 ms;
 - explicit release cancellation;
-- mode-switch reset behavior.
+- mode-switch reset behavior, including the absence of a new fixed startup step after Shift.
 
 Then run the real libinput integration build and interactive free/locked/Shift/Scroll-Lock/middle-suppression checks. Core unit tests are necessary but do not substitute for the host build.
