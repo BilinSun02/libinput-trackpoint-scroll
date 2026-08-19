@@ -4,12 +4,7 @@ A libinput integration for responsive TrackPoint middle-button scrolling, built 
 
 Current development version: **0.1.0**. The exact known-working pre-core implementation is preserved as **0.0.14** under `releases/0.0.14/`.
 
-The project targets one pinned source revision:
-
-```text
-libinput 1.31.0
-659967488e1e66d7fb7210c6b86860c8e1e5bed4
-```
+The authoritative upstream libinput URL/version/commit for the current development line live in the root-level `UPSTREAM` file. Automation sources that file directly; human-facing documentation should refer to it rather than duplicate the current pin.
 
 The 0.0.14 behavior was validated over weeks of daily use. Its essential properties are:
 
@@ -47,6 +42,7 @@ The candidate has passed core unit/sanitizer tests, standalone algorithm-equival
 
 ## Start here
 
+- `UPSTREAM` — authoritative current upstream libinput repository/version/commit pin.
 - `docs/VERSIONS.md` — release/version meaning and compatibility baseline.
 - `docs/BEHAVIOR.md` — exact user-visible behavior and configuration semantics.
 - `docs/CONFIGURATION.md` — parser contract, aliases, compiled fallbacks, and reload behavior.
@@ -65,7 +61,7 @@ For a fresh clone that does not already have libinput source available, run:
 sh ./tools/prepare-libinput-tree.sh
 ```
 
-This creates the git-ignored `.work/libinput/` checkout from the canonical upstream repository, checks out the pinned commit, initializes the shared submodule, links it into the upstream Meson tree, verifies/materializes the 0.1.0 patch, and applies it. It stops at a ready-to-configure source tree and never silently resets unrecognized local changes.
+This creates the git-ignored `.work/libinput/` checkout from the upstream repository recorded in `UPSTREAM`, checks out the pinned commit, initializes the shared submodule, links it into the upstream Meson tree, verifies/materializes the 0.1.0 patch, and applies it. It stops at a ready-to-configure source tree and never silently resets unrecognized local changes.
 
 The manual workflow remains supported for users who already maintain a separate libinput checkout; see `docs/BUILD_AND_INSTALL.md`.
 
