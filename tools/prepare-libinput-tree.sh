@@ -33,8 +33,8 @@ fi
 sh "$script_dir/materialize-0.1.0-patch.sh" "$patch" >/dev/null
 
 if [ -n "$(git -C "$tree" status --porcelain)" ]; then
-    # Recognize either the original 0.1.0 candidate or that candidate plus
-    # the Meson syntax correction. Arbitrary local edits are still rejected.
+    # Recognize the base candidate once the Meson correction is present.
+    # Additional adapter-only fixups are validated/applied below.
     if git -C "$tree" apply --reverse --check "$meson_fix" >/dev/null 2>&1; then
         echo "existing corrected 0.1.0 tree detected"
     elif git -C "$tree" apply --reverse --check "$patch" >/dev/null 2>&1; then
@@ -78,6 +78,11 @@ else
     git -C "$tree" apply "$meson_fix"
     echo "applied Meson syntax fix"
 fi
+
+# libinput deliberately uses the strong usec_t newtype, while the reusable
+# core deliberately exposes plain uint64_t microsecond timestamps. Keep that
+# distinction and convert only at this adapter boundary.
+python3 "$script_dir/fix-0.1.0-usec-boundary.py" "$tree"
 
 git -C "$tree" diff --check
 
