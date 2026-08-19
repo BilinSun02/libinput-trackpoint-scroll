@@ -8,14 +8,14 @@ This integration targets libinput 1.31.0 at exactly:
 659967488e1e66d7fb7210c6b86860c8e1e5bed4
 ```
 
-Use a pristine checkout or a dedicated worktree. Do not stack the current patch on top of 0.0.14 or another experimental patch.
+Do not stack the current patch on top of 0.0.14 or another experimental patch.
 
 ## Clone with the shared core
 
 This repository uses a submodule:
 
 ```bash
-git clone --recurse-submodules <this-repository>
+git clone --recurse-submodules git@github.com:BilinSun02/libinput-trackpoint-scroll.git
 ```
 
 For an existing clone:
@@ -26,9 +26,68 @@ git submodule update --init --recursive
 
 The integration patch/build glue consumes `core/` from the exact gitlink recorded by this repository, not an arbitrary neighboring checkout.
 
-## Prepare a pristine libinput tree for 0.1.0
+## Managed-source fast path
 
-In the integration repository, expose the pinned core checkout to the pristine libinput tree as the Meson subproject expected by the patch:
+Users who do not already have a suitable libinput checkout can prepare one automatically:
+
+```bash
+sh ./tools/prepare-libinput-tree.sh
+```
+
+The script creates and manages:
+
+```text
+.work/libinput/
+```
+
+`.work/` is git-ignored by this repository.
+
+The script performs these steps:
+
+1. initializes the exact `core/` submodule revision recorded by this repository;
+2. clones the canonical libinput upstream repository into `.work/libinput/` when absent;
+3. checks out the pinned libinput commit in detached-HEAD state;
+4. exposes `core/` as `subprojects/trackpoint-scroll-core` in the managed checkout;
+5. materializes and SHA-256-verifies the 0.1.0 patch into `.work/`;
+6. checks and applies that patch;
+7. runs `git diff --check`;
+8. prints the Meson/Ninja commands for the prepared tree.
+
+The official upstream used by default is:
+
+```text
+https://gitlab.freedesktop.org/libinput/libinput.git
+```
+
+For testing a mirror or another transport without editing the script:
+
+```bash
+LIBINPUT_UPSTREAM_URL=<git-url> sh ./tools/prepare-libinput-tree.sh
+```
+
+The managed tree is deliberately disposable. Remove `.work/libinput/` to recreate it from scratch.
+
+The script does **not** silently reset an unrecognized dirty checkout. Re-running it is supported when the tree contains the project patch and ordinary untracked build output; if tracked changes do not match the expected 0.1.0 patch, it exits and asks the user to preserve or remove them explicitly.
+
+After preparation, the default build commands are:
+
+```bash
+meson setup .work/libinput/builddir .work/libinput \
+  --prefix=/usr/local \
+  --buildtype=release \
+  -Dlibwacom=false \
+  -Dtests=false \
+  -Ddebug-gui=false \
+  -Ddocumentation=false
+
+ninja -C .work/libinput/builddir
+```
+
+## Manual workflow with an existing libinput tree
+
+Users who already maintain a separate pristine libinput checkout can use it directly.
+
+Expose the pinned core checkout to that tree:
 
 ```bash
 sh ./tools/link-core-subproject.sh /path/to/libinput-source
@@ -43,16 +102,13 @@ subprojects/trackpoint-scroll-core
 Materialize the current compressed patch:
 
 ```bash
-gzip -dc patches/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch.gz \
-  > /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch
+sh ./tools/materialize-0.1.0-patch.sh /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch
 ```
 
-Check the uncompressed SHA-256:
+That helper verifies the uncompressed SHA-256:
 
-```bash
-printf '%s  %s\n' \
-  8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016 \
-  /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch | sha256sum -c -
+```text
+8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016
 ```
 
 Then, from the pristine libinput checkout:
@@ -104,6 +160,13 @@ The established install prefix is `/usr/local`:
 
 ```bash
 sudo ninja -C builddir install
+sudo ldconfig
+```
+
+For the managed tree, use:
+
+```bash
+sudo ninja -C .work/libinput/builddir install
 sudo ldconfig
 ```
 
