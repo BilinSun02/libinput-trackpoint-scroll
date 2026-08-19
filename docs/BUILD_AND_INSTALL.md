@@ -2,10 +2,12 @@
 
 ## Pinned source
 
-This integration targets libinput 1.31.0 at exactly:
+The authoritative current upstream libinput repository, version, and commit are recorded in the root-level `UPSTREAM` file. Automation sources that file directly. Do not duplicate the current pin in scripts or prose that is meant to track the active development line.
 
-```text
-659967488e1e66d7fb7210c6b86860c8e1e5bed4
+To inspect it:
+
+```bash
+cat UPSTREAM
 ```
 
 Do not stack the current patch on top of 0.0.14 or another experimental patch.
@@ -45,25 +47,22 @@ The script creates and manages:
 The script performs these steps:
 
 1. initializes the exact `core/` submodule revision recorded by this repository;
-2. clones the canonical libinput upstream repository into `.work/libinput/` when absent;
-3. checks out the pinned libinput commit in detached-HEAD state;
-4. exposes `core/` as `subprojects/trackpoint-scroll-core` in the managed checkout;
-5. materializes and SHA-256-verifies the 0.1.0 patch into `.work/`;
-6. checks and applies that patch;
-7. runs `git diff --check`;
-8. prints the Meson/Ninja commands for the prepared tree.
+2. reads the canonical upstream URL/version/commit from `UPSTREAM`;
+3. clones that upstream into `.work/libinput/` when absent;
+4. checks out the pinned commit in detached-HEAD state;
+5. exposes `core/` as `subprojects/trackpoint-scroll-core` in the managed checkout;
+6. materializes and SHA-256-verifies the 0.1.0 patch into `.work/`;
+7. checks and applies that patch;
+8. runs `git diff --check`;
+9. prints the Meson/Ninja commands for the prepared tree.
 
-The official upstream used by default is:
-
-```text
-https://gitlab.freedesktop.org/libinput/libinput.git
-```
-
-For testing a mirror or another transport without editing the script:
+For testing a mirror or another transport without changing the project pin:
 
 ```bash
 LIBINPUT_UPSTREAM_URL=<git-url> sh ./tools/prepare-libinput-tree.sh
 ```
+
+That override changes only where Git fetches the pinned commit from; `UPSTREAM` remains authoritative for the expected version and commit.
 
 The managed tree is deliberately disposable. Remove `.work/libinput/` to recreate it from scratch.
 
@@ -85,7 +84,7 @@ ninja -C .work/libinput/builddir
 
 ## Manual workflow with an existing libinput tree
 
-Users who already maintain a separate pristine libinput checkout can use it directly.
+Users who already maintain a separate pristine libinput checkout can use it directly. First compare that checkout's HEAD with `LIBINPUT_COMMIT` in `UPSTREAM`.
 
 Expose the pinned core checkout to that tree:
 
@@ -121,7 +120,7 @@ git apply /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch
 git diff --check
 ```
 
-The expected HEAD is the pinned commit above.
+The expected HEAD is `LIBINPUT_COMMIT` from `UPSTREAM`.
 
 ## Recommended Meson options
 
