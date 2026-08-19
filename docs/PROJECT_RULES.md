@@ -35,11 +35,22 @@ git apply --check
 full Meson configuration
 full Ninja build
 git diff --check
+interactive behavioral smoke test
+safe install/loader verification
 ```
 
 Synthetic/reconstructed hunk preimages are useful secondary diagnostics only. They are not sufficient release validation.
 
 Do not claim a full integration build happened unless it actually did.
+
+## Installation discipline
+
+- Replacing one `/usr/local` project build with another compatible build should install the replacement directly; do not normally run `ninja uninstall` first.
+- After installing a shared-library replacement, run `ldconfig` before restarting the graphical session.
+- Verify loader-visible `libinput.so*` paths resolve to real files before logout/reboot. `tools/install-managed-libinput.sh` is the preferred managed-tree path.
+- `ninja uninstall` is for intentionally removing a custom build, not the ordinary first step of an upgrade.
+- If a graphical session fails after installation, preserve evidence before recovery changes when practical: record `journalctl --list-boots`, inspect the failed boot's display-manager and high-priority logs, and capture `ldconfig -p` output.
+- Do not promote a plausible loader/cache explanation to a confirmed cause without evidence. Preserve unresolved installation incidents as unresolved.
 
 ## Naming and source conventions
 
