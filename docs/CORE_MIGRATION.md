@@ -1,10 +1,22 @@
 # Core migration
 
-## Goal
+## Goal and current status
 
-The deployed v14 behavior remains the reference while reusable motion processing moves out of the large `src/evdev.c` patch body. The migration should reduce the libinput patch to an adapter around the `core/` API rather than maintain two copies of the startup/reconstruction/profile algorithms.
+The 0.0.14 behavior is the compatibility reference while reusable motion processing moves out of the large `src/evdev.c` patch body.
 
-This is a structural refactor first. Behavioral changes should be separate and opt-in so a regression can be attributed cleanly.
+A first core-backed **0.1.0 candidate is now implemented**. It reduces the libinput patch to an adapter around the `core/` API rather than maintaining two copies of startup/reconstruction/memoryless-profile algorithms.
+
+This remains a structural refactor first. Behavioral changes should be separate and opt-in so a regression can be attributed cleanly.
+
+Candidate identifiers:
+
+```text
+core gitlink:
+133df50ea5ce58e71e3fed3240c26999ee689386
+
+uncompressed patch SHA-256:
+8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016
+```
 
 ## Build linkage
 
@@ -20,15 +32,15 @@ The helper does this with a symlink rather than copying source:
 sh ./tools/link-core-subproject.sh /path/to/libinput-source
 ```
 
-The shared `meson.build` defines `core_dep`; the libinput Meson patch should obtain that dependency from the subproject and link it into the library target. This keeps the source of the reusable engine single and makes the recorded gitlink part of build reproducibility.
+The shared `meson.build` defines `core_dep`; the 0.1.0 libinput patch obtains that dependency from the subproject and adds it to `deps_libinput`.
 
 A production build should fail clearly when the expected subproject is absent rather than silently fall back to a duplicated implementation.
 
-## Function-level migration map
+## Ownership after extraction
 
-### Move to core API calls
+### Provided by core
 
-The inline v14 equivalents of these responsibilities should disappear from the libinput patch after migration:
+The 0.1.0 candidate no longer carries inline libinput copies of:
 
 ```text
 first-step sign tracking
@@ -40,12 +52,12 @@ raw-share lifetime accounting
 affine scalar mapping
 quadratic scalar mapping
 hyperbolic scalar mapping
-memoryless negative-output clamp
+memoryless negative-output clamp/non-finite containment
 ```
 
-Libinput should feed raw timestamped vectors to `tpsc_engine_feed()` and obtain output from `tpsc_engine_tick()`.
+Libinput feeds timestamped vectors to `tpsc_engine_feed()` and obtains output from `tpsc_engine_tick()`.
 
-### Keep in the libinput adapter
+### Retained in the libinput adapter
 
 ```text
 button-scroll route selection
@@ -64,56 +76,63 @@ no-scroll middle-click suppression
 TrackPoint device initialization/destruction
 ```
 
-## Suggested integration state
+## Integration state
 
-The large v14 `evdev_scroll_grid` structure should shrink to adapter state similar in responsibility to:
+The old large `evdev_scroll_grid`/inline-accelerator state has been replaced with an integration-owned pointer state whose responsibilities are approximately:
 
 ```text
-core engine pointer
+core engine pointer + core configuration
+selected profile and portable memoryless-profile parameters
+integration-owned adaptive filter and parameters
 logical-timer-active flag
+raw-input timestamp used for host scheduling equivalence
 public-posted flag
 free/locked mode bit
-integration profile/adaptive state
+gesture-active state
+middle-click suppression policy
 ```
 
-Do not mirror core ring slots, interval history, startup signs, or startup report counters in `evdev.h` after migration.
-
-A forward declaration of the opaque core engine is preferable in broad internal headers when possible; include the full core API only in implementation files that call it.
+Core ring slots, interval history, startup signs, and startup report counters are not mirrored in `evdev.h`.
 
 ## Configuration translation
 
 The text parser remains here because the path and accepted names are integration policy.
 
-At device initialization:
+At device initialization the 0.1.0 candidate:
 
-1. start with `tpsc_engine_config_defaults()`;
-2. parse startup keys and override the corresponding core configuration fields;
-3. parse the selected profile and its parameters;
-4. install one integration transform callback into the core config;
-5. create the core engine;
-6. create the adaptive filter independently when adaptive support is available.
+1. calls `tpsc_engine_config_defaults()`;
+2. parses startup keys into the core configuration;
+3. parses profile selection/parameters;
+4. initializes portable affine/quadratic/hyperbolic `tpsc_profile` structures;
+5. creates the integration-owned adaptive filter;
+6. installs an integration transform callback/reset callback in the core config;
+7. creates the core engine.
 
-The transform callback should dispatch as follows:
+The transform callback dispatches as follows:
 
-- affine/quadratic/hyperbolic: call the corresponding shared profile implementation;
-- adaptive: run the dedicated libinput TrackPoint filter and apply the current scale/sensitivity wrapper.
+- affine/quadratic/hyperbolic: `tpsc_profile_apply()`;
+- adaptive: dedicated upstream TrackPoint filter plus the existing scale/sensitivity wrapper.
 
-The reset callback should restart adaptive velocity history. It may be a no-op for memoryless profiles.
-
-This preserves one core engine regardless of selected profile while keeping host-owned stateful acceleration outside the shared library.
+The reset callback restarts adaptive velocity history. For memoryless profiles the reset has no additional state to clear.
 
 ## Timer translation
 
-The current `device->scroll.timer` can continue to schedule logical ticks. The adapter should obtain the logical period from `tpsc_engine_tick_us()` rather than duplicate the 2 ms constant.
+The existing `device->scroll.timer` continues to schedule logical ticks. The adapter obtains the logical period from `tpsc_engine_tick_us()` rather than duplicating the 2 ms constant.
 
-Each timer firing should:
+Each core timer firing:
 
-1. call `tpsc_engine_tick()` with the current timestamp;
-2. route the returned vector through free or locked posting;
-3. set `posted` only at the final public notifier;
-4. schedule another tick while `tpsc_engine_needs_ticks()` is true.
+1. calls `tpsc_engine_tick()`;
+2. routes the returned vector through free or locked posting;
+3. sets `posted` only at the final public notifier;
+4. schedules another tick while `tpsc_engine_needs_ticks()` is true.
 
 A zero-output cleanup tick is valid: expiration occurs before pending activation in the causal ring semantics, so the final bookkeeping tick may produce zero while clearing the last live contribution.
+
+### Idle-rearm scheduling subtlety
+
+The core owns the logical idle rearm decision. The libinput adapter nevertheless tracks the previous raw-report timestamp for one host-specific reason: if a configured idle reset occurs while an old libinput timer is still scheduled, the adapter cancels that host timer before feeding the new report so the new burst's first logical tick is scheduled relative to the new report. This preserves the 0.0.14 scheduling behavior even with unusually small configured idle thresholds.
+
+That raw timestamp is adapter scheduling state, not a duplicate core interval estimator.
 
 ## Gesture and reset translation
 
@@ -122,25 +141,44 @@ A zero-output cleanup tick is valid: expiration occurs before pending activation
 - Idle rearm is owned internally by the core feed logic.
 - Mode switch: stop an already public sequence if necessary, cancel timer work, reset libinput buildup/direction, then call `tpsc_engine_restart(engine, time, TPSC_RESTART_BYPASS_STARTUP)`.
 
-The bypass restart is important for behavioral equivalence with v14. A mode switch discards pre-switch shares and resets stateful transform history, but it does **not** turn the first post-switch motion report into another fixed startup step. That next report enters sustained reconstruction directly, with its first interval measured from the mode-switch timestamp.
+The bypass restart is important for behavioral equivalence with 0.0.14. A mode switch discards pre-switch shares and resets stateful transform history, but it does **not** turn the first post-switch motion report into another fixed startup step. That next report enters sustained reconstruction directly, with its first interval measured from the mode-switch timestamp.
 
-`TPSC_RESTART_REARM_STARTUP` exists for higher-level policies that deliberately want a new startup episode without ending the surrounding gesture; it should not be used for the current Shift mode switch.
+`TPSC_RESTART_REARM_STARTUP` remains available for higher-level policies that deliberately want a new startup episode without ending the surrounding gesture; it is not used for the current Shift mode switch.
 
 For a normal gesture start or idle-rearmed burst, the startup merge window begins on the first raw motion report, not at middle-button press itself.
 
-## Equivalence tests before replacing v14
+## Equivalence/validation performed
 
-Before a core-backed patch supersedes v14, replay deterministic raw traces through both implementations where feasible and compare:
+The 0.1.0 candidate has undergone these checks:
 
-- first-step output for `(1,0)`, `(0,1)`, `(1,1)`, larger-magnitude startup reports;
-- split-axis reports inside 70 ms;
+- core strict C11 tests;
+- core AddressSanitizer/UndefinedBehaviorSanitizer runs;
+- standalone deterministic comparison between the 0.0.14 reference algorithm and the shared engine for affine, quadratic, and hyperbolic traces;
+- startup fixed-step and split-axis cases;
 - startup rebound cases;
-- transition at the merge-window boundary;
-- sustained identity-transform conservation;
+- startup-to-sustained transition;
 - overlapping sparse reports;
-- affine/quadratic/hyperbolic transformed output;
 - idle rearm at 333.3 ms;
-- explicit release cancellation;
-- mode-switch reset behavior, including the absence of a new fixed startup step after Shift.
+- explicit release/tail cancellation in core tests;
+- mode-switch restart with no new startup step;
+- non-finite memoryless profile containment;
+- complete-patch apply and whitespace checks on the reconstructed pristine source map;
+- strict mock-host C syntax checking of the integration-owned block.
 
-Then run the real libinput integration build and interactive free/locked/Shift/Scroll-Lock/middle-suppression checks. Core unit tests are necessary but do not substitute for the host build.
+The candidate also uses separately verified exact upstream contexts for its Meson dependency hunk and core-header include hunk.
+
+## Required validation still pending
+
+Core unit tests do not substitute for the host build. Before 0.1.0 supersedes 0.0.14 as the field-tested release, run on the complete pristine pinned libinput source:
+
+```text
+core submodule linked into subprojects/
+git apply --check
+git apply
+git diff --check
+Meson configure
+Ninja compile
+interactive free/locked/Shift/Scroll-Lock/middle-suppression checks
+```
+
+The environment that generated the candidate lacked Meson and could not install it from the network, so a successful full libinput build has **not** been claimed.
