@@ -1,11 +1,15 @@
 #!/bin/sh
 set -eu
 
-UPSTREAM_COMMIT=659967488e1e66d7fb7210c6b86860c8e1e5bed4
-UPSTREAM_URL=${LIBINPUT_UPSTREAM_URL:-https://gitlab.freedesktop.org/libinput/libinput.git}
-
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+
+# Single source of truth for the current upstream pin.
+# LIBINPUT_UPSTREAM_URL remains an optional per-invocation mirror override.
+. "$repo_root/UPSTREAM"
+UPSTREAM_COMMIT=$LIBINPUT_COMMIT
+UPSTREAM_URL=${LIBINPUT_UPSTREAM_URL:-$LIBINPUT_REPO}
+
 work_root="$repo_root/.work"
 tree="$work_root/libinput"
 patch="$work_root/libinput-trackpoint-scroll-v0.1.0.patch"
@@ -21,7 +25,7 @@ if [ ! -d "$tree/.git" ]; then
         exit 1
     fi
 
-    echo "cloning libinput into $tree"
+    echo "cloning libinput $LIBINPUT_VERSION into $tree"
     git clone --filter=blob:none "$UPSTREAM_URL" "$tree"
 fi
 
@@ -64,6 +68,7 @@ fi
 
 cat <<EOF
 ready: $tree
+upstream: libinput $LIBINPUT_VERSION @ $UPSTREAM_COMMIT
 
 Next step:
   meson setup '$tree/builddir' '$tree' \\
