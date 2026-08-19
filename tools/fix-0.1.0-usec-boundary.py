@@ -6,9 +6,6 @@ import subprocess
 import sys
 
 
-FLAGS = re.MULTILINE | re.DOTALL
-
-
 def load_upstream(repo_root):
     values = {}
     for raw in (repo_root / "UPSTREAM").read_text().splitlines():
@@ -47,22 +44,135 @@ def load_expectations(repo_root, commit):
     return families, path
 
 
-def fix_family(text, label, unfixed_pattern, fixed_pattern, replacement, expected):
-    unfixed = re.compile(unfixed_pattern, FLAGS)
-    fixed = re.compile(fixed_pattern, FLAGS)
+def skip_quoted_or_comment(text, i):
+    n = len(text)
+    if text.startswith("//", i):
+        j = text.find("\n", i + 2)
+        return n if j < 0 else j + 1
+    if text.startswith("/*", i):
+        j = text.find("*/", i + 2)
+        if j < 0:
+            raise RuntimeError("unterminated block comment while parsing evdev.c")
+        return j + 2
+    if text[i] not in ('\"', "'"):
+        return i
 
-    unfixed_count = len(list(unfixed.finditer(text)))
-    fixed_count = len(list(fixed.finditer(text)))
-    total = unfixed_count + fixed_count
+    quote = text[i]
+    j = i + 1
+    while j < n:
+        if text[j] == "\\":
+            j += 2
+            continue
+        if text[j] == quote:
+            return j + 1
+        j += 1
+    raise RuntimeError("unterminated quoted literal while parsing evdev.c")
 
-    if total != expected:
+
+def find_matching_paren(text, open_pos):
+    depth = 0
+    i = open_pos
+    while i < len(text):
+        skipped = skip_quoted_or_comment(text, i)
+        if skipped != i:
+            i = skipped
+            continue
+        c = text[i]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+            if depth < 0:
+                break
+        i += 1
+    raise RuntimeError(f"unbalanced parentheses near byte {open_pos} in evdev.c")
+
+
+def trim_span(text, start, end):
+    while start < end and text[start].isspace():
+        start += 1
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    return start, end
+
+
+def split_arguments(text, start, end):
+    spans = []
+    arg_start = start
+    paren = bracket = brace = 0
+    i = start
+    while i < end:
+        skipped = skip_quoted_or_comment(text, i)
+        if skipped != i:
+            i = skipped
+            continue
+        c = text[i]
+        if c == "(":
+            paren += 1
+        elif c == ")":
+            paren -= 1
+        elif c == "[":
+            bracket += 1
+        elif c == "]":
+            bracket -= 1
+        elif c == "{":
+            brace += 1
+        elif c == "}":
+            brace -= 1
+        elif c == "," and paren == 0 and bracket == 0 and brace == 0:
+            spans.append(trim_span(text, arg_start, i))
+            arg_start = i + 1
+        i += 1
+
+    if arg_start < end or text[start:end].strip():
+        spans.append(trim_span(text, arg_start, end))
+    return spans
+
+
+def find_calls(text, function_name):
+    pattern = re.compile(rf"\b{re.escape(function_name)}\s*\(")
+    calls = []
+    for match in pattern.finditer(text):
+        open_pos = text.find("(", match.start(), match.end())
+        close_pos = find_matching_paren(text, open_pos)
+        args = split_arguments(text, open_pos + 1, close_pos)
+        calls.append(args)
+    return calls
+
+
+def compact(expr):
+    return re.sub(r"\s+", "", expr)
+
+
+def arg_is(text, span, expected):
+    return compact(text[span[0]:span[1]]) == compact(expected)
+
+
+def fix_call_family(text, *, key, label, function_name, target_index,
+                    unfixed_expr, fixed_expr, expected, predicate):
+    sites = []
+    for args in find_calls(text, function_name):
+        if target_index >= len(args) or not predicate(text, args):
+            continue
+        target = args[target_index]
+        if arg_is(text, target, unfixed_expr):
+            sites.append((target[0], target[1], "unfixed"))
+        elif arg_is(text, target, fixed_expr):
+            sites.append((target[0], target[1], "fixed"))
+
+    unfixed_count = sum(state == "unfixed" for _, _, state in sites)
+    fixed_count = sum(state == "fixed" for _, _, state in sites)
+    if len(sites) != expected:
         raise RuntimeError(
-            f"{label}: expected {expected} total site(s), found "
+            f"{label}: expected {expected} total site(s) for {key}, found "
             f"{unfixed_count} unfixed + {fixed_count} fixed"
         )
 
-    if unfixed_count:
-        text = unfixed.sub(replacement, text)
+    for start, end, state in sorted(sites, reverse=True):
+        if state == "unfixed":
+            text = text[:start] + fixed_expr + text[end:]
 
     return text, unfixed_count
 
@@ -101,70 +211,82 @@ def main():
     text = path.read_text()
     changed = 0
 
-    # Regexes describe the adapter forms; expected multiplicities do not live
-    # here. They are commit-specific data in compat/libinput/<commit>/ so a
-    # libinput re-pin cannot silently inherit assumptions from another source
-    # revision.
-    fixes = [
-        (
-            "adaptive_filter_dispatch_timestamp",
-            "adaptive filter_dispatch timestamp",
-            r"(filter_dispatch\(state->adaptive\.filter,\s*state->device,\s*[^,]+,\s*)time_us(\s*\))",
-            r"filter_dispatch\(state->adaptive\.filter,\s*state->device,\s*[^,]+,\s*usec_from_uint64_t\(time_us\)\s*\)",
-            r"\1usec_from_uint64_t(time_us)\2",
+    families = [
+        dict(
+            key="adaptive_filter_dispatch_timestamp",
+            label="adaptive filter_dispatch timestamp",
+            function_name="filter_dispatch",
+            target_index=3,
+            unfixed_expr="time_us",
+            fixed_expr="usec_from_uint64_t(time_us)",
+            predicate=lambda t, a: len(a) == 4 and arg_is(t, a[0], "state->adaptive.filter"),
         ),
-        (
-            "adaptive_filter_restart_timestamp",
-            "adaptive filter_restart timestamp",
-            r"filter_restart\(state->adaptive\.filter,\s*state->device,\s*time_us\s*\)",
-            r"filter_restart\(state->adaptive\.filter,\s*state->device,\s*usec_from_uint64_t\(time_us\)\s*\)",
-            r"filter_restart(state->adaptive.filter, state->device, usec_from_uint64_t(time_us))",
+        dict(
+            key="adaptive_filter_restart_timestamp",
+            label="adaptive filter_restart timestamp",
+            function_name="filter_restart",
+            target_index=2,
+            unfixed_expr="time_us",
+            fixed_expr="usec_from_uint64_t(time_us)",
+            predicate=lambda t, a: len(a) == 3 and arg_is(t, a[0], "state->adaptive.filter") and arg_is(t, a[1], "state->device"),
         ),
-        (
-            "core_restart_timestamp",
-            "core restart timestamp",
-            r"(tpsc_engine_restart\(\s*state->engine,\s*)time(\s*,\s*TPSC_RESTART_BYPASS_STARTUP\s*\))",
-            r"tpsc_engine_restart\(\s*state->engine,\s*usec_as_uint64_t\(time\)\s*,\s*TPSC_RESTART_BYPASS_STARTUP\s*\)",
-            r"\1usec_as_uint64_t(time)\2",
+        dict(
+            key="core_restart_timestamp",
+            label="core restart timestamp",
+            function_name="tpsc_engine_restart",
+            target_index=1,
+            unfixed_expr="time",
+            fixed_expr="usec_as_uint64_t(time)",
+            predicate=lambda t, a: len(a) == 3 and arg_is(t, a[0], "state->engine") and arg_is(t, a[2], "TPSC_RESTART_BYPASS_STARTUP"),
         ),
-        (
-            "core_begin_timestamps",
-            "core begin timestamps",
-            r"tpsc_engine_begin\(state->engine,\s*time\s*\)",
-            r"tpsc_engine_begin\(state->engine,\s*usec_as_uint64_t\(time\)\s*\)",
-            r"tpsc_engine_begin(state->engine, usec_as_uint64_t(time))",
+        dict(
+            key="core_begin_timestamps",
+            label="core begin timestamps",
+            function_name="tpsc_engine_begin",
+            target_index=1,
+            unfixed_expr="time",
+            fixed_expr="usec_as_uint64_t(time)",
+            predicate=lambda t, a: len(a) == 2 and arg_is(t, a[0], "state->engine"),
         ),
-        (
-            "core_feed_timestamp",
-            "core feed timestamp",
-            r"tpsc_engine_feed\(state->engine,\s*time,\s*input\s*\)",
-            r"tpsc_engine_feed\(state->engine,\s*usec_as_uint64_t\(time\),\s*input\s*\)",
-            r"tpsc_engine_feed(state->engine, usec_as_uint64_t(time), input)",
+        dict(
+            key="core_feed_timestamp",
+            label="core feed timestamp",
+            function_name="tpsc_engine_feed",
+            target_index=1,
+            unfixed_expr="time",
+            fixed_expr="usec_as_uint64_t(time)",
+            predicate=lambda t, a: len(a) == 3 and arg_is(t, a[0], "state->engine") and arg_is(t, a[2], "input"),
         ),
-        (
-            "core_tick_timestamp",
-            "core tick timestamp",
-            r"tpsc_engine_tick\(state->engine,\s*time,\s*&output\s*\)",
-            r"tpsc_engine_tick\(state->engine,\s*usec_as_uint64_t\(time\),\s*&output\s*\)",
-            r"tpsc_engine_tick(state->engine, usec_as_uint64_t(time), &output)",
+        dict(
+            key="core_tick_timestamp",
+            label="core tick timestamp",
+            function_name="tpsc_engine_tick",
+            target_index=1,
+            unfixed_expr="time",
+            fixed_expr="usec_as_uint64_t(time)",
+            predicate=lambda t, a: len(a) == 3 and arg_is(t, a[0], "state->engine") and arg_is(t, a[2], "&output"),
         ),
-        (
-            "core_end_timestamp",
-            "core end timestamp",
-            r"tpsc_engine_end\(state->engine,\s*time\s*\)",
-            r"tpsc_engine_end\(state->engine,\s*usec_as_uint64_t\(time\)\s*\)",
-            r"tpsc_engine_end(state->engine, usec_as_uint64_t(time))",
+        dict(
+            key="core_end_timestamp",
+            label="core end timestamp",
+            function_name="tpsc_engine_end",
+            target_index=1,
+            unfixed_expr="time",
+            fixed_expr="usec_as_uint64_t(time)",
+            predicate=lambda t, a: len(a) == 2 and arg_is(t, a[0], "state->engine"),
         ),
-        (
-            "logical_tick_interval_newtype",
-            "logical tick interval newtype",
-            r"usec_add\(time,\s*tpsc_engine_tick_us\(state->engine\)\s*\)",
-            r"usec_add\(time,\s*usec_from_uint64_t\(tpsc_engine_tick_us\(state->engine\)\)\s*\)",
-            r"usec_add(time, usec_from_uint64_t(tpsc_engine_tick_us(state->engine)))",
+        dict(
+            key="logical_tick_interval_newtype",
+            label="logical tick interval newtype",
+            function_name="usec_add",
+            target_index=1,
+            unfixed_expr="tpsc_engine_tick_us(state->engine)",
+            fixed_expr="usec_from_uint64_t(tpsc_engine_tick_us(state->engine))",
+            predicate=lambda t, a: len(a) == 2 and arg_is(t, a[0], "time"),
         ),
     ]
 
-    keys = {item[0] for item in fixes}
+    keys = {item["key"] for item in families}
     manifest_keys = set(expectations)
     if keys != manifest_keys:
         missing = sorted(keys - manifest_keys)
@@ -174,14 +296,14 @@ def main():
         )
 
     expected_total = 0
-    for key, label, unfixed, fixed, replacement in fixes:
-        expected = expectations[key]
+    for family in families:
+        expected = expectations[family["key"]]
         if not isinstance(expected, int) or expected < 0:
-            raise RuntimeError(f"invalid expected count for {key}: {expected!r}")
+            raise RuntimeError(
+                f"invalid expected count for {family['key']}: {expected!r}"
+            )
         expected_total += expected
-        text, n = fix_family(
-            text, label, unfixed, fixed, replacement, expected
-        )
+        text, n = fix_call_family(text, expected=expected, **family)
         changed += n
 
     if changed:
