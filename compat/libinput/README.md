@@ -12,6 +12,8 @@ compat/libinput/<LIBINPUT_COMMIT>/
 
 For the 0.1.0 timestamp adapter, `usec-boundary.json` records the expected number of call sites in each conversion family. The fixer computes its total from that manifest; there is no independent hardcoded total in the fixer.
 
+The fixer recognizes call sites structurally by function name and parsed C argument positions rather than by exact whitespace/layout or the ordering of unrelated middle arguments. The commit-specific manifest still supplies the authoritative multiplicities, so more tolerant source recognition does not weaken the pin: a missing, extra, or differently shaped boundary site still fails validation.
+
 When re-pinning libinput:
 
 1. update `UPSTREAM`;
