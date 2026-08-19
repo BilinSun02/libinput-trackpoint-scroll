@@ -29,7 +29,7 @@ jobs:
       - name: Commit browsable historical files
         run: |
           set -eux
-          if git diff --quiet -- releases/0.0.14/files && git diff --cached --quiet; then
+          if [ -z "$(git status --porcelain -- releases/0.0.14/files)" ]; then
             exit 0
           fi
           git config user.name github-actions[bot]
