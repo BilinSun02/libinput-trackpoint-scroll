@@ -1,0 +1,1 @@
+ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event[0-9]*", ATTRS{name}=="xy_3dg12 xy_3dg12 USB RF Adapter", ATTRS{id/vendor}=="5859", ATTRS{id/product}=="0001", ENV{ID_INPUT_POINTINGSTICK}="1"

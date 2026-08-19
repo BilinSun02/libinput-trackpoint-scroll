@@ -1,0 +1,30 @@
+# /etc/libinput/trackpoint-scroll.conf
+# Read once when each TrackPoint device is initialized.
+
+profile=hyperbolic
+clamp_negative_output=false
+suppress_middle_click=true
+
+first_step_distance=0.4
+first_step_axis_merge_ms=70.0
+first_step_max_reports=-1
+idle_reset_ms=333.3
+
+# Affine: y = k*x + b
+affine_k=0.4
+affine_b=0.0
+
+# Quadratic: y = a*(x-h)^2 + k
+quadratic_a=0.16
+quadratic_h=0.0
+quadratic_k=0.025
+
+# Dedicated adaptive TrackPoint filter
+adaptive_velocity_scale=100.0
+adaptive_sensitivity=1.086
+adaptive_speed=0.0
+
+# Hyperbolic: y = a*sqrt(u^2 + x^2) + k
+hyperbolic_a=0.75
+hyperbolic_u=1.6
+hyperbolic_k=-1.175
