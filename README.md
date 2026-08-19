@@ -28,6 +28,7 @@ The reusable motion-processing code lives in the `core/` submodule. This reposit
 
 - `docs/BEHAVIOR.md` — exact user-visible behavior and configuration semantics.
 - `docs/ARCHITECTURE.md` — boundary between the shared engine and libinput integration.
+- `docs/CORE_MIGRATION.md` — function-level plan for replacing the inline v14 algorithms with the submodule APIs.
 - `docs/BUILD_AND_INSTALL.md` — pinned-source build/install workflow.
 - `docs/DEVICE_SETUP.md` — device classification and udev details.
 - `docs/DEBUGGING_AND_MAINTENANCE.md` — traps, validation rules, and operational checks.
@@ -36,6 +37,12 @@ The reusable motion-processing code lives in the `core/` submodule. This reposit
 ## Repository status
 
 The shared engine has been extracted into `core/`. The deployed v14 patch predates that extraction and is the behavioral reference while the integration is rewritten to call the submodule. Do not fabricate a replacement patch by reconstructing hunks from documentation: new production patches must be generated against the pristine pinned source and must pass a real build.
+
+The helper below exposes the pinned core checkout to a libinput source tree as a Meson subproject without copying it:
+
+```bash
+sh ./tools/link-core-subproject.sh /path/to/libinput-source
+```
 
 ## Documentation rule
 
