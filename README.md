@@ -52,20 +52,22 @@ The candidate has passed core unit/sanitizer tests, standalone algorithm-equival
 - `docs/CONFIGURATION.md` — parser contract, aliases, compiled fallbacks, and reload behavior.
 - `docs/ARCHITECTURE.md` — boundary between the shared engine and libinput integration.
 - `docs/CORE_MIGRATION.md` — extracted-vs-integration ownership and 0.1.0 implementation/validation details.
-- `docs/BUILD_AND_INSTALL.md` — pinned-source build/install workflow.
+- `docs/BUILD_AND_INSTALL.md` — managed-source and manual build/install workflows.
 - `docs/DEVICE_SETUP.md` — device classification and udev details.
 - `docs/DEBUGGING_AND_MAINTENANCE.md` — traps, validation rules, and operational checks.
 - `docs/PROJECT_RULES.md` — contribution and documentation conventions.
 
-## Core-backed build preparation
+## Fast path: prepare a managed libinput tree
 
-After initializing the submodule, expose it to the pristine libinput tree before Meson configuration:
+For a fresh clone that does not already have libinput source available, run:
 
 ```bash
-sh ./tools/link-core-subproject.sh /path/to/libinput-source
+sh ./tools/prepare-libinput-tree.sh
 ```
 
-Then materialize/apply the 0.1.0 patch as documented in `docs/BUILD_AND_INSTALL.md`.
+This creates the git-ignored `.work/libinput/` checkout from the canonical upstream repository, checks out the pinned commit, initializes the shared submodule, links it into the upstream Meson tree, verifies/materializes the 0.1.0 patch, and applies it. It stops at a ready-to-configure source tree and never silently resets unrecognized local changes.
+
+The manual workflow remains supported for users who already maintain a separate libinput checkout; see `docs/BUILD_AND_INSTALL.md`.
 
 ## Documentation rule
 
