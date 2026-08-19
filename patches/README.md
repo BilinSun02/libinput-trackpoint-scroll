@@ -73,9 +73,13 @@ Unlike 0.0.14, it removes the duplicated startup/coalescing/ring/memoryless-prof
 - standalone 0.0.14-vs-core trace comparison passed for affine, quadratic, and hyperbolic behavior, including startup/coalescing, overlap, idle rearm, and Shift-style startup-bypass restart;
 - the integration-owned custom block passed a strict mock-host C syntax check;
 - real Meson configuration succeeded after correcting the generated dependency assignment;
-- real Ninja compilation succeeded after correcting the explicit `usec_t`/`uint64_t` adapter boundary;
-- the resulting core-backed library booted into the normal desktop successfully after reinstall;
-- an initial several-minute interactive TrackPoint scrolling smoke test matched intended behavior.
+- real Ninja compilation succeeded after correcting the explicit `usec_t`/`uint64_t` adapter boundary.
+
+### Runtime validation still required
+
+A subsequent Build-ID comparison showed that the normal desktop session which booted successfully after the recovery-mode reinstall sequence was **not** running the newly built core-backed `libinput.so.10`; a different installed libinput was selected by the dynamic loader. Therefore that successful boot and the several-minute scrolling test do not count as runtime validation of the 0.1.0 candidate.
+
+Before runtime validation can be credited, the loader-selected installed `libinput.so.10` must have the same ELF Build ID as the newly built library, then the machine must successfully start a fresh graphical session using that library and pass the behavioral smoke test.
 
 ### Confirmed installation/loader incident
 
@@ -87,9 +91,9 @@ error while loading shared libraries: libinput.so.10: cannot open shared object 
 
 This establishes that the desktop failure was an install/loader-state failure, not a deterministic crash in the core-backed scrolling implementation. The historical journal alone does not distinguish whether the shared object/symlink was physically absent or present but not visible through the loader search/cache at that moment.
 
-After recovery-mode reinstall cycles, installing the same core-backed build again and rebooting normally succeeded, and interactive scrolling behaved as intended.
+The recovery-mode sequence then installed the old build and installed the new build over it without uninstalling the old build again. The later Build-ID mismatch proves that an older/different libinput still won dynamic linking on the resulting successful boot. This explains why that boot cannot be used as evidence for the new candidate's runtime behavior.
 
-The supported replacement workflow therefore installs the new build directly over the existing `/usr/local` build, runs `ldconfig`, verifies loader-visible shared-object paths, and only then advises restarting the graphical session. Do not use `ninja uninstall` as the normal first step when replacing one compatible project build with another. See `tools/install-managed-libinput.sh` and `docs/BUILD_AND_INSTALL.md`.
+The supported replacement workflow therefore installs the new build directly over the existing `/usr/local` build, runs `ldconfig`, verifies loader-visible shared-object paths, and then verifies that the loader-selected SONAME has the **same ELF Build ID as the build artifact** before advising a restart. Do not use `ninja uninstall` as the normal first step when replacing one compatible project build with another. See `tools/install-managed-libinput.sh` and `docs/BUILD_AND_INSTALL.md`.
 
 ## Release checklist
 
@@ -101,8 +105,9 @@ git apply --check
 git diff --check
 Meson configure
 Ninja compile
+loader-selected Build ID matches build artifact
+fresh graphical-session boot with that exact library
 behavioral smoke test
-safe install/loader verification
 ```
 
 Record the patch SHA-256, exact core gitlink, and the `UPSTREAM` state used by that patch.
