@@ -18,11 +18,34 @@ Treat 0.0.14 as the compatibility reference when validating refactors.
 
 ## 0.1.0 — core-backed line
 
-`VERSION` is now `0.1.0`. This line is the first architecture in which reusable motion processing is required to come from the pinned `core/` submodule instead of being duplicated inline in the libinput patch.
+`VERSION` is `0.1.0`. This is the first line in which reusable motion processing comes from the pinned `core/` submodule instead of being duplicated inline in the libinput patch.
 
-The intended behavioral contract is equivalence with 0.0.14 unless a change is separately documented and tested. The migration must preserve startup fixed-step/coalescing/rebound behavior, sustained reconstruction, profile behavior, release cancellation, free/locked modes, Shift and Scroll Lock semantics, public-post bookkeeping, and middle-click suppression.
+A core-backed replacement patch now exists under `patches/` and is pinned to core commit:
 
-0.1.0 is not considered release-complete merely because the repository version has been bumped: the production patch must actually link the shared core, build against the pristine pinned libinput source, and pass the equivalence and interactive checks documented in `CORE_MIGRATION.md`.
+```text
+133df50ea5ce58e71e3fed3240c26999ee689386
+```
+
+Uncompressed patch SHA-256:
+
+```text
+8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016
+```
+
+The intended behavioral contract remains equivalence with 0.0.14 unless a change is separately documented and tested. The candidate preserves the startup fixed-step/coalescing/rebound behavior, causal reconstruction, profile behavior, release cancellation, free/locked modes, Shift and Scroll Lock semantics, public-post bookkeeping, and middle-click suppression while delegating reusable mechanics to the submodule.
+
+### Current validation status
+
+Algorithm/static validation has passed:
+
+- strict core unit and sanitizer tests;
+- standalone reference-trace equivalence against the pre-extraction algorithm for the portable profile paths;
+- patch application/whitespace checks on the reconstructed pristine source map;
+- strict syntax checking of the integration-owned C block with mock host definitions.
+
+A real Meson/Ninja build against the complete pristine libinput tree has **not** yet run in the current environment because Meson was unavailable and could not be installed from the network. Interactive verification of the core-backed build is also pending.
+
+Therefore 0.1.0 is an implemented development/release candidate, not yet a fully validated replacement for 0.0.14.
 
 ## Rule for future versions
 
