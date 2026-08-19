@@ -29,9 +29,21 @@ The reusable motion-processing code lives in the `core/` submodule. This reposit
 ## Version lines
 
 - **0.0.14** — exact historical v14 bundle, known-working baseline, with reusable algorithms still inline in the libinput patch.
-- **0.1.0** — first core-backed line. Reusable startup, reconstruction, and memoryless-profile mechanics must come from the pinned `core/` submodule rather than a duplicated inline copy.
+- **0.1.0** — first core-backed line. A complete replacement candidate now exists and consumes the pinned core submodule for startup, reconstruction, and memoryless profile mechanics.
 
-See `docs/VERSIONS.md`. A `VERSION` value of 0.1.0 marks the active development line; it does not by itself claim that a release-complete core-backed patch has passed the required pristine-source build and equivalence tests.
+Current 0.1.0 candidate:
+
+```text
+patch (uncompressed SHA-256):
+8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016
+
+core gitlink:
+133df50ea5ce58e71e3fed3240c26999ee689386
+```
+
+The patch is stored compressed under `patches/`; see `patches/README.md` and `docs/BUILD_AND_INSTALL.md`.
+
+The candidate has passed core unit/sanitizer tests, standalone algorithm-equivalence traces, patch application/whitespace checks on the reconstructed pristine source map, and strict mock-host syntax checking. It has **not** yet passed the required real Meson/Ninja build and interactive smoke test, so 0.0.14 remains the fully field-tested fallback.
 
 ## Start here
 
@@ -39,21 +51,21 @@ See `docs/VERSIONS.md`. A `VERSION` value of 0.1.0 marks the active development 
 - `docs/BEHAVIOR.md` — exact user-visible behavior and configuration semantics.
 - `docs/CONFIGURATION.md` — parser contract, aliases, compiled fallbacks, and reload behavior.
 - `docs/ARCHITECTURE.md` — boundary between the shared engine and libinput integration.
-- `docs/CORE_MIGRATION.md` — function-level plan for replacing the 0.0.14 inline algorithms with the submodule APIs.
+- `docs/CORE_MIGRATION.md` — extracted-vs-integration ownership and 0.1.0 implementation/validation details.
 - `docs/BUILD_AND_INSTALL.md` — pinned-source build/install workflow.
 - `docs/DEVICE_SETUP.md` — device classification and udev details.
 - `docs/DEBUGGING_AND_MAINTENANCE.md` — traps, validation rules, and operational checks.
 - `docs/PROJECT_RULES.md` — contribution and documentation conventions.
 
-## Repository status
+## Core-backed build preparation
 
-The shared engine has been extracted into `core/`. Version 0.0.14 is preserved as the working compatibility reference while 0.1.0 is the core-backed integration line. Production 0.1.0 patch work must be generated against the pristine pinned source and must pass a real build; do not fabricate a replacement patch by reconstructing old hunks from prose.
-
-The helper below exposes the pinned core checkout to a libinput source tree as a Meson subproject without copying it:
+After initializing the submodule, expose it to the pristine libinput tree before Meson configuration:
 
 ```bash
 sh ./tools/link-core-subproject.sh /path/to/libinput-source
 ```
+
+Then materialize/apply the 0.1.0 patch as documented in `docs/BUILD_AND_INSTALL.md`.
 
 ## Documentation rule
 
