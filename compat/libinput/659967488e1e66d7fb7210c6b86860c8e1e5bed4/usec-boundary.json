@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "libinput_commit": "659967488e1e66d7fb7210c6b86860c8e1e5bed4",
+  "families": {
+    "adaptive_filter_dispatch_timestamp": 1,
+    "adaptive_filter_restart_timestamp": 1,
+    "core_restart_timestamp": 1,
+    "core_begin_timestamps": 2,
+    "core_feed_timestamp": 1,
+    "core_tick_timestamp": 1,
+    "core_end_timestamp": 1,
+    "logical_tick_interval_newtype": 2
+  }
+}
