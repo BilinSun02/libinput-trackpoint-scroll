@@ -27,6 +27,7 @@ The reusable motion-processing code lives in the `core/` submodule. This reposit
 ## Start here
 
 - `docs/BEHAVIOR.md` — exact user-visible behavior and configuration semantics.
+- `docs/CONFIGURATION.md` — parser contract, aliases, compiled fallbacks, and reload behavior.
 - `docs/ARCHITECTURE.md` — boundary between the shared engine and libinput integration.
 - `docs/CORE_MIGRATION.md` — function-level plan for replacing the inline v14 algorithms with the submodule APIs.
 - `docs/BUILD_AND_INSTALL.md` — pinned-source build/install workflow.
