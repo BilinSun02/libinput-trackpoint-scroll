@@ -127,6 +127,10 @@ This is a second reason, beyond avoiding a temporary missing-SONAME state, not t
 
 A normal Ubuntu/Debian libinput installation should remain owned and maintained by dpkg/apt. The managed default under `/usr/local` does not intentionally overwrite it.
 
+The installer's dpkg ownership check is **prospective**: it prevents this helper from newly overwriting package-owned destinations. It does not prove that package-owned files were pristine before the helper ran. A historical manual/custom install may already have replaced bytes at a path that dpkg still considers its own.
+
+If package cleanliness matters, first identify ownership with `dpkg-query -S <path>`, then use the package manager's verification/reinstall mechanisms deliberately. Do not make the custom installer silently repair or delete pre-existing package-path modifications because their provenance may be unrelated to this project.
+
 After installing the custom build, `ldconfig` determines cache order for ordinary new processes. If the distro library remains first in the cache, the installer fails and says not to reboot. Do not solve that mismatch by blindly writing the custom library over `/usr`.
 
 Package upgrades can rebuild the loader cache or change the distro library later. Re-run the install verification or at minimum repeat the cache/runtime Build-ID checks after relevant package upgrades before assuming the custom library is still active.
