@@ -96,26 +96,30 @@ Reinitialize the removable TrackPoint (replug it), repeat the no-motion middle c
 
 This check concerns the integration-owned **state reset**, not whether adaptive feels dramatically different from affine/quadratic/hyperbolic. Similar overall response between profiles is neither a pass nor a failure.
 
-The adaptive wrapper contains velocity history. The required invariant is that this history is restarted at gesture/reset boundaries and on an in-gesture mode switch. A manual test can provide evidence only when the stale-history effect is large enough to perceive reliably.
+The manual adaptive comparison on the verified 0.1.0 runtime was inconclusive because the adaptive-state effect was not clearly perceptible. The required reset wiring was therefore checked directly in the exact source used for that build.
 
-Temporarily set:
+The integration registers:
 
-```ini
-profile=adaptive
+```text
+core_config.transform.reset = evdev_trackpoint_scroll_transform_reset
 ```
 
-and replug the TrackPoint. Then, if the effect is perceptible on the device:
+and that callback calls:
 
-1. Scroll hard enough in one gesture to establish a high-velocity adaptive history.
-2. Release middle.
-3. Start a fresh gesture with deliberately light motion.
-4. Look specifically for an obviously elevated initial response inherited from the previous gesture. It should not occur.
-5. Build velocity again, press Shift after middle to switch mode, then continue with light post-switch motion.
-6. Again look specifically for inherited high-velocity response. It should not occur.
+```text
+filter_restart(state->adaptive.filter, state->device, time)
+```
 
-If adaptive history is not perceptually distinguishable enough to make those comparisons reliable, record this check as **INCONCLUSIVE (manual)** rather than guessing PASS or FAIL. In that case the reset invariant should be established by code-path/instrumented validation instead of subjective profile comparison.
+when the adaptive filter exists.
 
-Restore the recommended profile and replug when finished.
+The shared engine invokes its registered transform reset from all relevant boundaries:
+
+- `tpsc_engine_begin()` — gesture start;
+- `tpsc_engine_end()` — gesture end;
+- `tpsc_engine_restart()` — in-gesture restart, including the Shift mode switch with `TPSC_RESTART_BYPASS_STARTUP`;
+- `begin_burst()` — first input of a burst and idle rearm after a gap exceeding `idle_reset_ms`.
+
+Thus the adapter-to-core reset path is structurally complete for gesture, mode-switch, and idle-reset boundaries. The perceptual adaptive comparison is retained only as an optional smoke test; it is not required to distinguish profiles by feel.
 
 ## Current 0.1.0 host observations
 
@@ -128,7 +132,7 @@ Shift-before-middle:           PASS
 post-middle Shift toggle:      PASS
 Scroll Lock/latching:          PASS
 middle suppression true/false: PASS
-adaptive gesture/mode reset:   INCONCLUSIVE (manual; adaptive state effect not clearly perceptible)
+adaptive gesture/mode reset:   PASS (code-path verification; manual effect not clearly perceptible)
 ```
 
 For the post-middle Shift check, persistence of locked mode after releasing Shift is affirmative evidence: release is not supposed to revert the toggle.
@@ -144,7 +148,7 @@ Shift-before-middle:           PASS
 post-middle Shift toggle:      PASS
 Scroll Lock/latching:          PASS
 middle suppression true/false: PASS
-adaptive gesture/mode reset:   PASS or INCONCLUSIVE (manual) + instrumented/code-path evidence
+adaptive gesture/mode reset:   PASS (manual, instrumented, or exact code-path verification)
 ```
 
 A basic scrolling smoke test is not a substitute for this matrix. The shared core unit/equivalence tests cover reusable startup/reconstruction/profile mechanics; this checklist covers integration-owned routing, keyboard policy, posting, suppression, and host reset behavior.
