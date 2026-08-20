@@ -73,17 +73,13 @@ Before runtime validation can be credited, the loader-selected installed `libinp
 
 ### Confirmed installation/loader incident
 
-The failed normal boot is fully explained as an installation-path/loader-selection problem rather than a scrolling-code crash:
+The failed normal boot was an installation/loader failure rather than a scrolling-code crash: GNOME Shell and the Xorg libinput driver repeatedly failed with `libinput.so.10: cannot open shared object file`.
 
-- GNOME Shell and the Xorg libinput driver repeatedly failed with `libinput.so.10: cannot open shared object file`;
-- the known-working v14 library is installed in the system libdir and contains the project-specific `/etc/libinput/trackpoint-scroll.conf` string;
-- the initial 0.1.0 managed build instead installed to `/usr/local/lib/x86_64-linux-gnu/libinput.so.10.13.0`;
-- that `/usr/local` file and symlink chain existed and `/usr/local/lib/x86_64-linux-gnu` was present in `ld.so.conf`, but `ldconfig -p` still selected `/lib/x86_64-linux-gnu/libinput.so.10`;
-- after reinstalling v14 and then installing the `/usr/local` 0.1.0 build, the desktop booted because v14 remained loader-selected.
+The known-working v14 library was loader-selected from the system libdir. The initial 0.1.0 build installed under `/usr/local/lib/x86_64-linux-gnu`, but the old build had been uninstalled first and `ldconfig` was not run after installing the new library. On the failed boot the loader could not resolve the SONAME. Recovery restored v14; a later successful boot still selected v14, as proven by Build-ID comparison.
 
-Thus `/usr/local` is not a valid replacement prefix for the tested Ubuntu desktop configuration. Managed builds now use `--prefix=/usr`, matching the loader-selected system location, and `tools/install-managed-libinput.sh` refuses other prefixes and verifies the selected Build ID before allowing a reboot.
+The evidence does **not** establish that `/usr/local` is intrinsically unusable. The custom file and symlink chain existed and its directory was present in `ld.so.conf`; the missing safety step was a cache refresh plus exact loader-selection verification. Managed builds therefore retain the non-package default `/usr/local`, and `tools/install-managed-libinput.sh` now runs `ldconfig`, refuses dpkg-owned destinations, and verifies the selected Build ID before a restart is considered safe.
 
-Do not uninstall the loader-selected working build before replacement. Install the new `/usr` build directly over it so there is no interval in which the desktop cannot resolve `libinput.so.10`.
+A previous self-compiled libinput elsewhere is not automatically removed. If it still wins dynamic linking, the installer fails closed and reports the selected path. A dpkg/apt-managed libinput is not overwritten by the managed helper; direct package-path replacement requires an explicit packaging or diversion strategy.
 
 ## Release checklist
 
