@@ -101,13 +101,13 @@ echo "build ID:      $build_id"
 
 before=$(ldconfig -p 2>/dev/null | awk -v soname="$soname" '$1 == soname {print $NF; exit}')
 if [ -n "$before" ]; then
-    echo "before install loader selects: $before"
+    echo "before install cache selects: $before"
 fi
 
 echo "installing libinput from: $builddir"
 # Do not uninstall another custom libinput first. Installing into this build's
 # own prefix is non-destructive to custom copies elsewhere; after ldconfig the
-# Build-ID check below determines which copy actually wins.
+# Build-ID check below determines which copy is first in the loader cache.
 ninja -C "$builddir" install
 
 echo "refreshing dynamic-loader cache"
@@ -119,7 +119,7 @@ if [ ! -s "$cache_tmp" ]; then
     exit 1
 fi
 
-echo "loader-visible libinput libraries:"
+echo "cache-visible libinput libraries:"
 bad=0
 while IFS= read -r path; do
     if [ ! -e "$path" ]; then
@@ -131,34 +131,34 @@ while IFS= read -r path; do
     echo "  $path -> $resolved"
 done < "$cache_tmp"
 if [ "$bad" -ne 0 ]; then
-    echo "error: at least one loader-visible libinput path is missing" >&2
+    echo "error: at least one cache-visible libinput path is missing" >&2
     exit 1
 fi
 
-selected=$(ldconfig -p | awk -v soname="$soname" '$1 == soname {print $NF; exit}')
-if [ -z "$selected" ]; then
+cache_selected=$(ldconfig -p | awk -v soname="$soname" '$1 == soname {print $NF; exit}')
+if [ -z "$cache_selected" ]; then
     echo "error: dynamic-loader cache does not resolve required SONAME $soname" >&2
     exit 1
 fi
-if [ ! -e "$selected" ]; then
-    echo "error: loader-selected $soname path is missing: $selected" >&2
+if [ ! -e "$cache_selected" ]; then
+    echo "error: cache-selected $soname path is missing: $cache_selected" >&2
     exit 1
 fi
-selected=$(readlink -f "$selected" 2>/dev/null || printf '%s' "$selected")
-selected_id=$(readelf -n "$selected" 2>/dev/null | awk '/Build ID:/ {print $3; exit}')
-if [ -z "$selected_id" ]; then
-    echo "error: cannot read Build ID from loader-selected library: $selected" >&2
+cache_selected=$(readlink -f "$cache_selected" 2>/dev/null || printf '%s' "$cache_selected")
+cache_id=$(readelf -n "$cache_selected" 2>/dev/null | awk '/Build ID:/ {print $3; exit}')
+if [ -z "$cache_id" ]; then
+    echo "error: cannot read Build ID from cache-selected library: $cache_selected" >&2
     exit 1
 fi
 
-echo "loader selects: $selected"
-echo "selected ID:    $selected_id"
+echo "cache selects: $cache_selected"
+echo "cache ID:      $cache_id"
 
-if [ "$selected_id" != "$build_id" ]; then
-    echo "error: another libinput installation still wins dynamic linking" >&2
-    echo "       selected path: $selected" >&2
-    echo "       build ID:      $build_id" >&2
-    echo "       selected ID:   $selected_id" >&2
+if [ "$cache_id" != "$build_id" ]; then
+    echo "error: another libinput installation is first in the ldconfig cache" >&2
+    echo "       cache path: $cache_selected" >&2
+    echo "       build ID:   $build_id" >&2
+    echo "       cache ID:   $cache_id" >&2
     echo "       Do not uninstall it blindly; identify that installation first." >&2
     echo "       DO NOT restart the graphical session or reboot." >&2
     exit 1
@@ -169,5 +169,7 @@ if command -v libinput >/dev/null 2>&1; then
     libinput --version || true
 fi
 
-echo "install verification passed: loader-selected $soname matches the build ID"
+echo "install verification passed: cache-selected $soname matches the build ID"
 echo "safe to restart the graphical session or reboot"
+echo "after restart, verify actual process mappings with:"
+echo "  sh '$script_dir/verify-runtime-libinput.sh' '$builddir'"
