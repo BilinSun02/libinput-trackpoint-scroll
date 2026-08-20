@@ -103,7 +103,9 @@ After a fresh graphical-session start or reboot, verify actual process mappings 
 sh ./tools/verify-runtime-libinput.sh
 ```
 
-That helper compares the build artifact, first cache entry, and every readable running process mapping of the required libinput SONAME by ELF Build ID. Runtime validation is credited only when an actual process mapping matches the build artifact.
+That helper compares the build artifact, first cache entry, and every readable running process mapping of the required libinput SONAME by ELF Build ID. Before trusting the pathname of a mapping, it also verifies that the mapping's device/inode still refers to the file currently at that path; this avoids falsely identifying an old mapped inode after an on-disk replacement.
+
+Runtime validation is credited only when an actual process mapping is safely tied to a file with the build artifact's Build ID.
 
 ## Existing self-compiled libinput elsewhere
 
@@ -117,7 +119,7 @@ If the previous custom build uses the same non-package prefix and destinations, 
 
 `ninja uninstall` uses the install manifest from the build tree that invokes it. It does not know whether another build subsequently replaced files at the same destinations.
 
-Therefore an old build tree's uninstall can delete a newer build's files when their install paths overlap. Before uninstalling an old custom build after another build has been installed, inspect the old install manifest/destinations and confirm they are not now owned by the replacement.
+Therefore an old build tree's uninstall can delete a newer build's files when their install paths overlap. Before uninstalling an old custom build after another build has been installed, inspect the old install manifest/destinations and confirm they are not now occupied by the replacement.
 
 This is a second reason, beyond avoiding a temporary missing-SONAME state, not to use `uninstall -> install` as the normal upgrade sequence.
 
@@ -156,9 +158,11 @@ is an installation/loader-resolution failure. An `undefined symbol` or composito
 
 ## Lesson from the 0.1.0 validation incident
 
-The first 0.1.0 installation was placed under `/usr/local`, but the old v14 system-path installation was uninstalled first and `ldconfig` was not run after installing the new build. The next boot could not resolve `libinput.so.10`. Recovery restored v14, and a later successful desktop boot was shown by Build-ID comparison to still be using v14.
+The first 0.1.0 installation was placed under `/usr/local`, and the old v14 system-path installation had been uninstalled first. The manual sequence did not include a separate explicit `ldconfig`/cache-verification step before reboot. The failed boot's journal proves that GNOME Shell and the Xorg libinput driver could not resolve `libinput.so.10`; it does **not** by itself prove the exact internal behavior of Meson/Ninja's install step or establish a single causal mechanism beyond that failed resolution state.
 
-The evidence did **not** establish that `/usr/local` itself was unusable. The custom `/usr/local` library existed and its directory was configured in `ld.so.conf`; the correct durable lesson was to make cache refresh and exact identity verification mandatory, not to hardcode `/usr`.
+Recovery restored v14, and a later successful desktop boot was shown by Build-ID comparison to still be using v14. Inspection then showed the new `/usr/local` library existed and `/usr/local/lib/x86_64-linux-gnu` was configured in `ld.so.conf`, while the cache still selected the system/v14 copy.
+
+The evidence therefore did **not** establish that `/usr/local` itself was unusable. The durable correction was to make an explicit cache refresh plus exact identity verification mandatory, not to hardcode `/usr`.
 
 After the installer was corrected, the same `/usr/local` core-backed build was installed, its first `ldconfig` cache entry matched the build artifact's Build ID, the machine rebooted normally, and post-reboot live process mappings matched the same Build ID. Basic scrolling worked in that verified session.
 
