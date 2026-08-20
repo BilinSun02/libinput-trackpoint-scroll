@@ -35,19 +35,24 @@ Pass criteria:
 
 ## 4. Fresh Shift after middle
 
+Shift is a **toggle**, not a hold-to-select modifier. Its press changes the current gesture mode; releasing that same Shift key is consumed but does not undo the toggle.
+
 1. Start a middle-button gesture in the default free mode.
 2. Press Shift only after middle is down, either before the first motion or during scrolling.
-3. Continue moving.
-4. Release that same Shift key.
+3. Continue moving and confirm the gesture is now locked.
+4. Release that same Shift key while keeping middle held.
+5. Continue moving: the gesture must remain locked after Shift is released.
+6. Press Shift freshly a second time while the same middle gesture is still active; the gesture must toggle back to free. Release Shift again; it must remain free.
 
 Pass criteria:
 
-- the gesture toggles from free to locked mode;
+- each fresh post-middle Shift press toggles the current gesture between free and locked;
+- a matching Shift release is consumed but never toggles the mode;
 - locked mode exhibits libinput's ordinary buildup/direction/axis-lock behavior rather than unrestricted two-dimensional output;
-- the fresh Shift press and its matching release are consumed by the custom gesture policy;
-- the switch does not emit a second fixed startup micro-step; post-switch motion resumes through sustained reconstruction.
+- free mode restores unrestricted two-dimensional output;
+- a switch does not emit another fixed startup micro-step; post-switch motion resumes through sustained reconstruction.
 
-Repeat once with the gesture starting locked (see Scroll Lock below); post-middle Shift must toggle it back to free.
+Repeat once with the gesture starting locked (see Scroll Lock below) if desired; the first fresh post-middle Shift press must toggle it to free.
 
 ## 5. Scroll Lock default and latching
 
@@ -89,7 +94,9 @@ Reinitialize the removable TrackPoint (replug it), repeat the no-motion middle c
 
 ## 7. Adaptive state reset
 
-This check is only for the integration-owned adaptive wrapper; the recommended hyperbolic profile is memoryless.
+This check concerns the integration-owned **state reset**, not whether adaptive feels dramatically different from affine/quadratic/hyperbolic. Similar overall response between profiles is neither a pass nor a failure.
+
+The adaptive wrapper contains velocity history. The required invariant is that this history is restarted at gesture/reset boundaries and on an in-gesture mode switch. A manual test can provide evidence only when the stale-history effect is large enough to perceive reliably.
 
 Temporarily set:
 
@@ -97,18 +104,36 @@ Temporarily set:
 profile=adaptive
 ```
 
-and replug the TrackPoint. Then:
+and replug the TrackPoint. Then, if the effect is perceptible on the device:
 
-1. Scroll hard enough in one gesture to build substantial adaptive velocity history.
+1. Scroll hard enough in one gesture to establish a high-velocity adaptive history.
 2. Release middle.
 3. Start a fresh gesture with deliberately light motion.
-4. Confirm the new gesture does not inherit the previous gesture's high-velocity response.
+4. Look specifically for an obviously elevated initial response inherited from the previous gesture. It should not occur.
 5. Build velocity again, press Shift after middle to switch mode, then continue with light post-switch motion.
-6. Confirm the post-switch response does not inherit the pre-switch adaptive history.
+6. Again look specifically for inherited high-velocity response. It should not occur.
+
+If adaptive history is not perceptually distinguishable enough to make those comparisons reliable, record this check as **INCONCLUSIVE (manual)** rather than guessing PASS or FAIL. In that case the reset invariant should be established by code-path/instrumented validation instead of subjective profile comparison.
 
 Restore the recommended profile and replug when finished.
 
-## Recording a pass
+## Current 0.1.0 host observations
+
+On the verified core-backed runtime session:
+
+```text
+runtime Build-ID verification: PASS
+free + release cancellation:   PASS
+Shift-before-middle:           PASS
+post-middle Shift toggle:      PASS
+Scroll Lock/latching:          PASS
+middle suppression true/false: PASS
+adaptive gesture/mode reset:   INCONCLUSIVE (manual; adaptive state effect not clearly perceptible)
+```
+
+For the post-middle Shift check, persistence of locked mode after releasing Shift is affirmative evidence: release is not supposed to revert the toggle.
+
+## Recording a future complete pass
 
 For a release candidate, record separately:
 
@@ -119,7 +144,7 @@ Shift-before-middle:           PASS
 post-middle Shift toggle:      PASS
 Scroll Lock/latching:          PASS
 middle suppression true/false: PASS
-adaptive gesture/mode reset:   PASS
+adaptive gesture/mode reset:   PASS or INCONCLUSIVE (manual) + instrumented/code-path evidence
 ```
 
 A basic scrolling smoke test is not a substitute for this matrix. The shared core unit/equivalence tests cover reusable startup/reconstruction/profile mechanics; this checklist covers integration-owned routing, keyboard policy, posting, suppression, and host reset behavior.
