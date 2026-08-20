@@ -29,14 +29,7 @@ tools/fix-0.1.0-usec-boundary.py
 
 The Meson fix exists because the initial base patch split an assignment across a bare newline. Meson rejects that form; the correction keeps the dependency assignment on one statement.
 
-The timestamp-boundary fixer exists because libinput deliberately defines `usec_t` as a strong newtype, while the platform-neutral core deliberately accepts plain `uint64_t` microsecond timestamps. The adapter must therefore convert explicitly:
-
-```text
-libinput usec_t -> core uint64_t: usec_as_uint64_t(...)
-core uint64_t -> libinput usec_t: usec_from_uint64_t(...)
-```
-
-The fixer is intentionally strict but resumable. Call-site multiplicities are pinned to the exact upstream commit under `compat/libinput/<LIBINPUT_COMMIT>/`; structural matching validates each family and converts only remaining unfixed sites. A re-pin without reviewed compatibility data fails closed. Once the canonical replacement patch is regenerated after successful host validation, these temporary corrections should be folded into that single patch artifact.
+The timestamp-boundary fixer exists because libinput deliberately defines `usec_t` as a strong newtype, while the platform-neutral core deliberately accepts plain `uint64_t` microsecond timestamps. The adapter therefore converts explicitly at the boundary. Call-site multiplicities are pinned to the exact upstream commit under `compat/libinput/<LIBINPUT_COMMIT>/`; structural matching validates each family and a re-pin without reviewed compatibility data fails closed.
 
 The base patch can be materialized with:
 
@@ -61,39 +54,36 @@ The candidate is tied to core gitlink:
 133df50ea5ce58e71e3fed3240c26999ee689386
 ```
 
-Unlike 0.0.14, it removes the duplicated startup/coalescing/ring/memoryless-profile implementation from the libinput patch. Those facilities are provided by `core/`. The libinput side retains routing, config parsing/aliases, the upstream adaptive-filter wrapper, timers, free/locked posting, Shift/Scroll Lock policy, middle-click suppression, and public sequence bookkeeping.
-
 ### Validation completed for the candidate
 
 - base replacement patch against the pristine revision recorded by `LIBINPUT_COMMIT` in `UPSTREAM`;
-- old-side/context inheritance checked against the exact 0.0.14 patch, with separately verified upstream Meson/include context;
-- `git apply --check`, `git apply`, and `git diff --check` passed on the reconstructed pristine source map;
-- stale-inline scan confirmed the old grid/ring/accelerator state is not duplicated in the new integration;
+- old-side/context inheritance checked against the exact 0.0.14 patch;
+- `git apply --check`, `git apply`, and `git diff --check` passed;
 - shared-core strict C11 tests and ASan/UBSan runs passed;
-- standalone 0.0.14-vs-core trace comparison passed for affine, quadratic, and hyperbolic behavior, including startup/coalescing, overlap, idle rearm, and Shift-style startup-bypass restart;
+- standalone 0.0.14-vs-core trace comparison passed for the reusable behavior;
 - the integration-owned custom block passed a strict mock-host C syntax check;
 - real Meson configuration succeeded after correcting the generated dependency assignment;
 - real Ninja compilation succeeded after correcting the explicit `usec_t`/`uint64_t` adapter boundary.
 
 ### Runtime validation still required
 
-A subsequent Build-ID comparison showed that the normal desktop session which booted successfully after the recovery-mode reinstall sequence was **not** running the newly built core-backed `libinput.so.10`; a different installed libinput was selected by the dynamic loader. Therefore that successful boot and the several-minute scrolling test do not count as runtime validation of the 0.1.0 candidate.
+The apparent successful post-recovery desktop boot was later shown by ELF Build-ID comparison to be using an older/different libinput, not the core-backed build. Therefore that boot and its several-minute scrolling test do not count as 0.1.0 runtime validation.
 
-Before runtime validation can be credited, the loader-selected installed `libinput.so.10` must have the same ELF Build ID as the newly built library, then the machine must successfully start a fresh graphical session using that library and pass the behavioral smoke test.
+Before runtime validation can be credited, the loader-selected installed `libinput.so.10` must have the same ELF Build ID as the build artifact, followed by a fresh graphical-session boot and behavioral smoke test.
 
 ### Confirmed installation/loader incident
 
-The first normal reboot after replacing the old 0.0.14 installation failed because the dynamic loader could not resolve `libinput.so.10`. The failed-boot journal contains repeated errors from both GNOME Shell and the Xorg libinput driver of the form:
+The failed normal boot is fully explained as an installation-path/loader-selection problem rather than a scrolling-code crash:
 
-```text
-error while loading shared libraries: libinput.so.10: cannot open shared object file: No such file or directory
-```
+- GNOME Shell and the Xorg libinput driver repeatedly failed with `libinput.so.10: cannot open shared object file`;
+- the known-working v14 library is installed in the system libdir and contains the project-specific `/etc/libinput/trackpoint-scroll.conf` string;
+- the initial 0.1.0 managed build instead installed to `/usr/local/lib/x86_64-linux-gnu/libinput.so.10.13.0`;
+- that `/usr/local` file and symlink chain existed and `/usr/local/lib/x86_64-linux-gnu` was present in `ld.so.conf`, but `ldconfig -p` still selected `/lib/x86_64-linux-gnu/libinput.so.10`;
+- after reinstalling v14 and then installing the `/usr/local` 0.1.0 build, the desktop booted because v14 remained loader-selected.
 
-This establishes that the desktop failure was an install/loader-state failure, not a deterministic crash in the core-backed scrolling implementation. The historical journal alone does not distinguish whether the shared object/symlink was physically absent or present but not visible through the loader search/cache at that moment.
+Thus `/usr/local` is not a valid replacement prefix for the tested Ubuntu desktop configuration. Managed builds now use `--prefix=/usr`, matching the loader-selected system location, and `tools/install-managed-libinput.sh` refuses other prefixes and verifies the selected Build ID before allowing a reboot.
 
-The recovery-mode sequence then installed the old build and installed the new build over it without uninstalling the old build again. The later Build-ID mismatch proves that an older/different libinput still won dynamic linking on the resulting successful boot. This explains why that boot cannot be used as evidence for the new candidate's runtime behavior.
-
-The supported replacement workflow therefore installs the new build directly over the existing `/usr/local` build, runs `ldconfig`, verifies loader-visible shared-object paths, and then verifies that the loader-selected SONAME has the **same ELF Build ID as the build artifact** before advising a restart. Do not use `ninja uninstall` as the normal first step when replacing one compatible project build with another. See `tools/install-managed-libinput.sh` and `docs/BUILD_AND_INSTALL.md`.
+Do not uninstall the loader-selected working build before replacement. Install the new `/usr` build directly over it so there is no interval in which the desktop cannot resolve `libinput.so.10`.
 
 ## Release checklist
 
