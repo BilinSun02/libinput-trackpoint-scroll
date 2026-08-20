@@ -58,7 +58,8 @@ The candidate is tied to core gitlink:
 - the managed installer refreshed the loader cache and verified the first cache entry for `libinput.so.10` had the build artifact's ELF Build ID;
 - a fresh normal graphical boot succeeded;
 - post-reboot live process mappings of `libinput.so.10` had the same Build ID as the build artifact;
-- basic interactive scrolling worked in that verified session.
+- the host behavior matrix passed for free scrolling/release cancellation, Shift ordering and toggle semantics, Scroll Lock default/latching, and middle-click suppression enabled/disabled;
+- adaptive reset wiring was verified directly in the exact integration/core code path: the registered transform reset calls `filter_restart()`, and the engine invokes that reset on gesture begin/end, in-gesture restart, and idle burst rearm.
 
 The earlier post-recovery successful boot is **not** counted: Build-ID comparison later proved that session still mapped the older v14 library.
 
@@ -76,12 +77,13 @@ Do not use `ldconfig -p` cache order as proof of what an already-running process
 
 ### Remaining 0.1.0 release work
 
-The candidate has passed initial verified runtime validation, but final release packaging should still:
+The candidate has passed verified runtime and host-behavior validation. Final release packaging still needs to:
 
 1. fold the Meson and timestamp-boundary corrections into one canonical replacement patch;
 2. regenerate patch/gzip checksums and update materialization metadata;
-3. re-run the complete pristine-checkout build/install validation on that final artifact;
-4. explicitly re-exercise the integration-owned behavior matrix (free/locked, Shift ordering/toggle, Scroll Lock, middle suppression, release cancellation, and adaptive reset behavior where applicable).
+3. re-run the complete pristine-checkout build/install/runtime verification on that final artifact.
+
+`tools/finalize-0.1.0-patch.sh` is the controlled path for generating and clean-building the folded artifact without touching the installed system copy.
 
 ## Release checklist
 
