@@ -36,44 +36,13 @@ Users who do not already have a suitable libinput checkout can prepare one autom
 sh ./tools/prepare-libinput-tree.sh
 ```
 
-The script creates and manages:
+The script creates and manages `.work/libinput/`, checks out the exact upstream commit from `UPSTREAM`, initializes the pinned core submodule, links it into the libinput Meson tree, materializes and applies the current patch/fixups, validates commit-specific compatibility expectations, and runs `git diff --check`.
 
-```text
-.work/libinput/
-```
-
-`.work/` is git-ignored by this repository.
-
-The script performs these steps:
-
-1. initializes the exact `core/` submodule revision recorded by this repository;
-2. reads the canonical upstream URL/version/commit from `UPSTREAM`;
-3. clones that upstream into `.work/libinput/` when absent;
-4. checks out the pinned commit in detached-HEAD state;
-5. exposes `core/` as `subprojects/trackpoint-scroll-core` in the managed checkout;
-6. materializes and SHA-256-verifies the 0.1.0 patch into `.work/`;
-7. checks and applies that patch and the current integration fixups;
-8. validates commit-specific source-shape expectations under `compat/libinput/<LIBINPUT_COMMIT>/`;
-9. runs `git diff --check`;
-10. prints the Meson/Ninja commands for the prepared tree.
-
-For testing a mirror or another transport without changing the project pin:
-
-```bash
-LIBINPUT_UPSTREAM_URL=<git-url> sh ./tools/prepare-libinput-tree.sh
-```
-
-That override changes only where Git fetches the pinned commit from; `UPSTREAM` remains authoritative for the expected version and commit.
-
-The managed tree is deliberately disposable. Remove `.work/libinput/` to recreate it from scratch.
-
-The script does **not** silently reset an unrecognized dirty checkout. Re-running it is supported when the tree contains the project patch and ordinary untracked build output; if tracked changes do not match the expected 0.1.0 patch set, it exits and asks the user to preserve or remove them explicitly.
-
-After preparation, the default build commands are:
+After preparation, configure and build with the system replacement prefix:
 
 ```bash
 meson setup .work/libinput/builddir .work/libinput \
-  --prefix=/usr/local \
+  --prefix=/usr \
   --buildtype=release \
   -Dlibwacom=false \
   -Dtests=false \
@@ -83,160 +52,81 @@ meson setup .work/libinput/builddir .work/libinput \
 ninja -C .work/libinput/builddir
 ```
 
+`/usr` is deliberate. On the tested Ubuntu system the desktop loader-selected `libinput.so.10` lives in the system multiarch libdir (`/lib/x86_64-linux-gnu`, merged with `/usr/lib/x86_64-linux-gnu`). A build installed under `/usr/local/lib/x86_64-linux-gnu` was present and listed in `ld.so.conf`, but the loader still selected the system copy with the same SONAME. Therefore `/usr/local` is not a reliable replacement location for this project.
+
+For testing a mirror or another transport without changing the project pin:
+
+```bash
+LIBINPUT_UPSTREAM_URL=<git-url> sh ./tools/prepare-libinput-tree.sh
+```
+
+That override changes only where Git fetches the pinned commit from; `UPSTREAM` remains authoritative.
+
+The managed tree is deliberately disposable. The preparation script does **not** silently reset an unrecognized dirty checkout.
+
 ## Manual workflow with an existing libinput tree
 
-Users who already maintain a separate pristine libinput checkout can use it directly. First compare that checkout's HEAD with `LIBINPUT_COMMIT` in `UPSTREAM`.
+Users who maintain a separate pristine libinput checkout can use it directly. First compare its HEAD with `LIBINPUT_COMMIT` in `UPSTREAM`, expose the pinned core checkout with `tools/link-core-subproject.sh`, apply the current patch/fixups, and configure the build with `--prefix=/usr`.
 
-Expose the pinned core checkout to that tree:
-
-```bash
-sh ./tools/link-core-subproject.sh /path/to/libinput-source
-```
-
-The resulting libinput path is:
-
-```text
-subprojects/trackpoint-scroll-core
-```
-
-Materialize the current compressed patch:
-
-```bash
-sh ./tools/materialize-0.1.0-patch.sh /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch
-```
-
-That helper verifies the uncompressed SHA-256:
-
-```text
-8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016
-```
-
-Then, from the pristine libinput checkout:
-
-```bash
-git rev-parse HEAD
-git status --short
-git apply --check /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch
-git apply /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch
-git diff --check
-```
-
-The expected HEAD is `LIBINPUT_COMMIT` from `UPSTREAM`.
-
-## Recommended Meson options
-
-Configure **after** the core subproject link exists and the patch has been applied:
-
-```bash
-meson setup builddir \
-  --prefix=/usr/local \
-  --buildtype=release \
-  -Dlibwacom=false \
-  -Dtests=false \
-  -Ddebug-gui=false \
-  -Ddocumentation=false
-```
-
-The pinned source enables libwacom by default for tablet identification. This TrackPoint integration does not require it, and leaving it enabled can introduce an otherwise irrelevant build dependency. Enable it deliberately only when the resulting build needs that tablet-identification support.
-
-The pinned option is `-Dtests=false` (plural).
-
-Build:
-
-```bash
-ninja -C builddir
-```
-
-The real checkout/compiler are authoritative. Earlier development exposed several reasons not to substitute synthetic patch validation for this step: malformed generated Meson syntax, symbol collisions, and libinput's strong `usec_t` type were all caught only by the real host toolchain.
+The real checkout/compiler are authoritative. Development has already exposed malformed generated Meson syntax, a symbol collision, and `usec_t` adapter errors that synthetic validation alone did not catch.
 
 ## Install and replace safely
 
-The established install prefix is `/usr/local`.
+This project intentionally replaces the system libinput used by GNOME/Mutter. Package-manager upgrades may overwrite it; conversely, installing this project overwrites the package-managed library contents at the same ABI path. Keep a known-working fallback available.
 
-When replacing one project build with another build using the same prefix/ABI, **do not run `ninja uninstall` first**. Installing the replacement directly avoids an unnecessary interval where `/usr/local` may contain no usable libinput at all.
+When replacing one project build with another compatible build, **do not uninstall the loader-selected build first**. Installing the replacement directly avoids an interval where GNOME and Xorg cannot resolve `libinput.so.10`.
 
-For the managed tree, the recommended path is the verified installer:
+For the managed tree use:
 
 ```bash
 sudo sh ./tools/install-managed-libinput.sh
 ```
 
-It performs, in order:
+The installer requires a Meson prefix of `/usr`, performs `ninja install`, runs `ldconfig`, finds the loader-selected SONAME, and compares its ELF Build ID with the build artifact. It prints a hard error and `DO NOT ... reboot` if the selected library is not exactly the one just built.
 
-1. `ninja install` from `.work/libinput/builddir`;
-2. `ldconfig`;
-3. verification that loader-visible `libinput.so*` paths resolve to real files;
-4. a best-effort check of which shared library the installed `libinput` CLI resolves.
+### One-time migration from the earlier `/usr/local` build
 
-It prints `install verification passed` before advising that it is safe to restart the graphical session or reboot.
-
-For a manually managed build directory, pass it explicitly:
+If a build directory was previously configured with `--prefix=/usr/local` and that version is already installed while a known-working system/v14 libinput is still loader-selected, clean only that `/usr/local` installation before changing the prefix:
 
 ```bash
-sudo sh ./tools/install-managed-libinput.sh /path/to/builddir
+sudo ninja -C .work/libinput/builddir uninstall
 ```
 
-The equivalent manual sequence is:
+At this point the system/v14 copy remains the loader-selected fallback. Then reconfigure the same build directory and rebuild:
 
 ```bash
-sudo ninja -C builddir install
-sudo ldconfig
-ldconfig -p | grep 'libinput\.so'
+meson setup --reconfigure .work/libinput/builddir .work/libinput \
+  --prefix=/usr
+ninja -C .work/libinput/builddir
 ```
 
-Use `ninja uninstall` only when you intentionally want to remove that build, not as the normal first step of an upgrade/replacement.
-
-Inspect which library is selected:
+Do **not** uninstall the system/v14 copy. Install the new build directly over it:
 
 ```bash
-ldconfig -p | grep 'libinput\.so'
-which libinput
-libinput --version
-ldd "$(command -v libinput)" | grep libinput
+sudo sh ./tools/install-managed-libinput.sh
 ```
 
-A running GNOME/Mutter process keeps the shared object it mapped at session start. After installing a rebuilt library, log out and back in (or reboot). For GNOME Shell, mapped libraries can be inspected with:
+Only restart the graphical session or reboot after the installer reports that the loader-selected Build ID matches the build artifact.
+
+## Loader diagnostics
+
+Useful checks are:
 
 ```bash
-grep -F libinput "/proc/$(pgrep -n gnome-shell)/maps" | sort -u
+ldconfig -p | grep 'libinput\.so.10'
+readelf -n .work/libinput/builddir/libinput.so.10.13.0 | grep 'Build ID'
 ```
 
-When debugging, a build-tree executable is preferable because its RPATH reduces ambiguity about which library it loads.
+A running process keeps the library it mapped at session start, so after a successful verified install start a fresh graphical session before judging runtime behavior.
 
-### If the graphical session fails after an install
+If the graphical session fails after an install, preserve the failed boot's journal. An error such as:
 
-Do not immediately destroy the failed boot's evidence. From a TTY or recovery shell, first record the boot list:
-
-```bash
-journalctl --list-boots
+```text
+libinput.so.10: cannot open shared object file: No such file or directory
 ```
 
-Then inspect the failed boot by its listed boot offset or boot ID, for example:
-
-```bash
-journalctl -b -3 -p err..alert --no-pager | \
-  grep -Ei 'libinput|gnome-shell|mutter|gdm|shared object|undefined symbol'
-
-journalctl -b -3 -u display-manager --no-pager
-```
-
-`-3` is only an example; select the actual failed boot from `journalctl --list-boots`.
-
-Also capture:
-
-```bash
-ldconfig -p | grep 'libinput\.so'
-```
-
-A missing shared object points toward installation/loader state; an `undefined symbol` or compositor crash after loading the library points toward an ABI/runtime problem.
+is an installation/loader failure. An `undefined symbol` or compositor crash after the correct Build ID has been loaded points instead toward ABI/runtime behavior.
 
 ## Runtime configuration reload
 
-The runtime file is parsed once per TrackPoint device initialization.
-
-After config-only changes:
-
-- replug a removable device; or
-- restart the graphical session for a built-in device.
-
-After library changes, restart the session so the compositor maps the new library. `udevadm trigger` alone does not reliably recreate the compositor-owned libinput device object.
+The runtime file is parsed once per TrackPoint device initialization. After config-only changes, replug a removable device or restart the graphical session for a built-in device. After library changes, start a fresh graphical session so the compositor maps the replacement library.
