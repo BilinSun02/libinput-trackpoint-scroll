@@ -36,7 +36,7 @@ core gitlink:
 133df50ea5ce58e71e3fed3240c26999ee689386
 ```
 
-The current corrected candidate is the stored base patch plus the documented Meson and timestamp-boundary corrections applied by `tools/prepare-libinput-tree.sh`. Those corrections should be folded into the canonical release patch before final 0.1.0 packaging.
+The current corrected candidate is the stored base patch plus the documented Meson and timestamp-boundary corrections applied by `tools/prepare-libinput-tree.sh`. Those corrections are being folded into the canonical release patch before final 0.1.0 packaging.
 
 ## Current validation status
 
@@ -64,6 +64,7 @@ The earlier apparent successful runtime test after recovery was correctly discar
 - `docs/ARCHITECTURE.md` — boundary between the shared engine and libinput integration.
 - `docs/CORE_MIGRATION.md` — extracted-vs-integration ownership and 0.1.0 implementation/validation details.
 - `docs/BUILD_AND_INSTALL.md` — managed-source and manual build/install workflows.
+- `docs/HOST_VALIDATION.md` — concise real-session validation matrix for integration-owned behavior.
 - `docs/DEBUGGING_AND_MAINTENANCE.md` — traps, validation rules, loader/runtime identity checks, and operational recovery lessons.
 - `docs/DEVICE_SETUP.md` — device classification and udev details.
 - `docs/PROJECT_RULES.md` — contribution and documentation conventions.
@@ -84,6 +85,12 @@ After installation and a fresh graphical-session start, verify actual runtime ma
 
 ```bash
 sh ./tools/verify-runtime-libinput.sh
+```
+
+For release-candidate host behavior, follow:
+
+```text
+docs/HOST_VALIDATION.md
 ```
 
 ## Documentation rule
