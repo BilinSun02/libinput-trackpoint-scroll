@@ -38,7 +38,7 @@ core gitlink:
 
 The patch is stored compressed under `patches/`; see `patches/README.md` and `docs/BUILD_AND_INSTALL.md`.
 
-The candidate has passed core unit/sanitizer tests, standalone algorithm-equivalence traces, patch application/whitespace checks on the reconstructed pristine source map, and strict mock-host syntax checking. It has **not** yet passed the required real Meson/Ninja build and interactive smoke test, so 0.0.14 remains the fully field-tested fallback.
+The candidate has passed core unit/sanitizer tests, standalone algorithm-equivalence traces, patch/application checks, real Meson configuration, and a real Ninja compile. Runtime validation is still pending: an apparent successful desktop test was later shown by ELF Build-ID comparison to have loaded the older v14 library because the initial 0.1.0 build used an ineffective `/usr/local` replacement prefix. Managed builds now target `/usr` and the installer verifies that the loader-selected `libinput.so.10` has the build artifact's exact Build ID before a reboot is considered safe.
 
 ## Start here
 
