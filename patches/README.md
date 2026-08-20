@@ -6,18 +6,11 @@ The authoritative current upstream URL/version/commit live in the root-level `UP
 
 ## 0.0.14 behavioral baseline
 
-The known-working pre-core patch is preserved in the exact historical bundle under `releases/0.0.14/`:
-
-```text
-libinput-1.31.0-trackpoint-scroll-2ms-grid-startup-coalescing-middle-suppression-v14.patch
-SHA-256 5a7f58a5406c03c085e495417acca8388e4b05b8073268830269e1e1d24e54cd
-```
-
-Project version **0.0.14** corresponds to that historical v14 distribution. It is the behavioral compatibility reference: its reusable startup/reconstruction/memoryless-profile algorithms remain inline in the libinput patch and it does not use the `core/` submodule.
+The known-working pre-core patch is preserved in the exact historical bundle under `releases/0.0.14/`. Project version **0.0.14** corresponds to that historical v14 distribution and remains the deep field-tested behavioral compatibility reference.
 
 ## 0.1.0 core-backed candidate
 
-The first core-backed replacement candidate is currently represented by a base patch plus two narrowly scoped integration corrections:
+The first core-backed replacement candidate is currently represented by a stored base patch plus two narrowly scoped integration corrections:
 
 ```text
 patches/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch.gz
@@ -27,18 +20,16 @@ tools/fix-0.1.0-usec-boundary.py
 
 `tools/prepare-libinput-tree.sh` applies/validates these in order and is the authoritative managed-source preparation path. Do not apply only the compressed base patch and assume the resulting tree is the current corrected candidate.
 
-The Meson fix exists because the initial base patch split an assignment across a bare newline. Meson rejects that form; the correction keeps the dependency assignment on one statement.
+The Meson fix corrects the initial generated dependency-assignment syntax. The timestamp-boundary fixer preserves the deliberate distinction between libinput's strong `usec_t` and the core's plain `uint64_t` microsecond API; commit-specific source-shape expectations live under `compat/libinput/<LIBINPUT_COMMIT>/`.
 
-The timestamp-boundary fixer exists because libinput deliberately defines `usec_t` as a strong newtype, while the platform-neutral core deliberately accepts plain `uint64_t` microsecond timestamps. The adapter therefore converts explicitly at the boundary. Call-site multiplicities are pinned to the exact upstream commit under `compat/libinput/<LIBINPUT_COMMIT>/`; structural matching validates each family and a re-pin without reviewed compatibility data fails closed.
-
-The base patch can be materialized with:
+The stored base patch can be materialized with:
 
 ```bash
 gzip -dc patches/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch.gz \
   > /tmp/libinput-1.31.0-trackpoint-scroll-core-v0.1.0.patch
 ```
 
-Checksums for the unchanged historical base candidate artifact:
+Checksums for the unchanged stored base artifact:
 
 ```text
 uncompressed base patch:
@@ -56,30 +47,39 @@ The candidate is tied to core gitlink:
 
 ### Validation completed for the candidate
 
-- base replacement patch against the pristine revision recorded by `LIBINPUT_COMMIT` in `UPSTREAM`;
+- base replacement patch checked against the pinned upstream revision;
 - old-side/context inheritance checked against the exact 0.0.14 patch;
 - `git apply --check`, `git apply`, and `git diff --check` passed;
 - shared-core strict C11 tests and ASan/UBSan runs passed;
 - standalone 0.0.14-vs-core trace comparison passed for the reusable behavior;
 - the integration-owned custom block passed a strict mock-host C syntax check;
 - real Meson configuration succeeded after correcting the generated dependency assignment;
-- real Ninja compilation succeeded after correcting the explicit `usec_t`/`uint64_t` adapter boundary.
+- real Ninja compilation succeeded after correcting the explicit `usec_t`/`uint64_t` adapter boundary;
+- the managed installer refreshed the loader cache and verified the first cache entry for `libinput.so.10` had the build artifact's ELF Build ID;
+- a fresh normal graphical boot succeeded;
+- post-reboot live process mappings of `libinput.so.10` had the same Build ID as the build artifact;
+- basic interactive scrolling worked in that verified session.
 
-### Runtime validation still required
-
-The apparent successful post-recovery desktop boot was later shown by ELF Build-ID comparison to be using an older/different libinput, not the core-backed build. Therefore that boot and its several-minute scrolling test do not count as 0.1.0 runtime validation.
-
-Before runtime validation can be credited, the loader-selected installed `libinput.so.10` must have the same ELF Build ID as the build artifact, followed by a fresh graphical-session boot and behavioral smoke test.
+The earlier post-recovery successful boot is **not** counted: Build-ID comparison later proved that session still mapped the older v14 library.
 
 ### Confirmed installation/loader incident
 
-The failed normal boot was an installation/loader failure rather than a scrolling-code crash: GNOME Shell and the Xorg libinput driver repeatedly failed with `libinput.so.10: cannot open shared object file`.
+The failed normal boot was an installation/loader-resolution failure rather than a scrolling-code crash: GNOME Shell and the Xorg libinput driver repeatedly failed with `libinput.so.10: cannot open shared object file`.
 
-The known-working v14 library was loader-selected from the system libdir. The initial 0.1.0 build installed under `/usr/local/lib/x86_64-linux-gnu`, but the old build had been uninstalled first and `ldconfig` was not run after installing the new library. On the failed boot the loader could not resolve the SONAME. Recovery restored v14; a later successful boot still selected v14, as proven by Build-ID comparison.
+The first 0.1.0 install placed the library under `/usr/local`, but the old v14 installation had been removed first and `ldconfig` was not run afterward. Recovery restored v14; a later boot still used v14. The evidence did **not** establish that `/usr/local` was intrinsically unusable.
 
-The evidence does **not** establish that `/usr/local` is intrinsically unusable. The custom file and symlink chain existed and its directory was present in `ld.so.conf`; the missing safety step was a cache refresh plus exact loader-selection verification. Managed builds therefore retain the non-package default `/usr/local`, and `tools/install-managed-libinput.sh` now runs `ldconfig`, refuses dpkg-owned destinations, and verifies the selected Build ID before a restart is considered safe.
+The corrected workflow keeps the non-package default `/usr/local`, runs `ldconfig`, refuses dpkg-owned destinations, verifies the first cache entry's Build ID before restart, and verifies actual process mappings after restart. See `tools/install-managed-libinput.sh`, `tools/verify-runtime-libinput.sh`, and `docs/BUILD_AND_INSTALL.md`.
 
-A previous self-compiled libinput elsewhere is not automatically removed. If it still wins dynamic linking, the installer fails closed and reports the selected path. A dpkg/apt-managed libinput is not overwritten by the managed helper; direct package-path replacement requires an explicit packaging or diversion strategy.
+Do not use `ldconfig -p` cache order as proof of what an already-running process mapped. Do not automatically remove other custom installations. Do not trust an old build tree's uninstall manifest after another overlapping installation has replaced the same destinations.
+
+### Remaining 0.1.0 release work
+
+The candidate has passed initial verified runtime validation, but final release packaging should still:
+
+1. fold the Meson and timestamp-boundary corrections into one canonical replacement patch;
+2. regenerate patch/gzip checksums and update materialization metadata;
+3. re-run the complete pristine-checkout build/install validation on that final artifact;
+4. explicitly re-exercise the integration-owned behavior matrix (free/locked, Shift ordering/toggle, Scroll Lock, middle suppression, release cancellation, and adaptive reset behavior where applicable).
 
 ## Release checklist
 
@@ -91,9 +91,10 @@ git apply --check
 git diff --check
 Meson configure
 Ninja compile
-loader-selected Build ID matches build artifact
-fresh graphical-session boot with that exact library
-behavioral smoke test
+cache Build ID matches build artifact
+fresh graphical-session boot
+live process mapping Build ID matches build artifact
+behavioral smoke/matrix checks
 ```
 
 Record the patch SHA-256, exact core gitlink, and the `UPSTREAM` state used by that patch.
