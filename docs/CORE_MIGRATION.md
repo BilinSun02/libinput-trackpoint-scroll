@@ -4,7 +4,7 @@
 
 The 0.0.14 behavior is the compatibility reference while reusable motion processing moves out of the large `src/evdev.c` patch body.
 
-A first core-backed **0.1.0 candidate is now implemented**. It reduces the libinput patch to an adapter around the `core/` API rather than maintaining two copies of startup/reconstruction/memoryless-profile algorithms.
+A first core-backed **0.1.0 candidate is implemented and host-buildable**. It reduces the libinput patch to an adapter around the `core/` API rather than maintaining two copies of startup/reconstruction/memoryless-profile algorithms.
 
 This remains a structural refactor first. Behavioral changes should be separate and opt-in so a regression can be attributed cleanly.
 
@@ -14,9 +14,11 @@ Candidate identifiers:
 core gitlink:
 133df50ea5ce58e71e3fed3240c26999ee689386
 
-uncompressed patch SHA-256:
+uncompressed base-patch SHA-256:
 8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016
 ```
+
+The current corrected candidate is the base patch plus the documented Meson and timestamp-boundary corrections managed by `tools/prepare-libinput-tree.sh`. These temporary corrections should be folded into the canonical 0.1.0 patch before final release packaging.
 
 ## Build linkage
 
@@ -47,7 +49,7 @@ first-step sign tracking
 first-step report count/window logic
 startup rebound filtering
 interval-history median
-2 ms pending/active/removal ring
+logical pending/active/removal ring
 raw-share lifetime accounting
 affine scalar mapping
 quadratic scalar mapping
@@ -93,6 +95,19 @@ middle-click suppression policy
 ```
 
 Core ring slots, interval history, startup signs, and startup report counters are not mirrored in `evdev.h`.
+
+## Timestamp boundary
+
+Upstream libinput deliberately defines `usec_t` as a strong newtype while the reusable core deliberately accepts plain `uint64_t` microsecond timestamps. The real host compile exposed adapter sites where implicit conversion was invalid.
+
+The durable rule is:
+
+```text
+libinput usec_t -> core uint64_t: usec_as_uint64_t(...)
+core uint64_t -> libinput usec_t: usec_from_uint64_t(...)
+```
+
+Do not change the core API to use libinput's `usec_t`. Commit-specific source-shape expectations for these conversion families live under `compat/libinput/<LIBINPUT_COMMIT>/` and are validated structurally by `tools/fix-0.1.0-usec-boundary.py`.
 
 ## Configuration translation
 
@@ -147,9 +162,9 @@ The bypass restart is important for behavioral equivalence with 0.0.14. A mode s
 
 For a normal gesture start or idle-rearmed burst, the startup merge window begins on the first raw motion report, not at middle-button press itself.
 
-## Equivalence/validation performed
+## Validation performed
 
-The 0.1.0 candidate has undergone these checks:
+The 0.1.0 candidate has undergone:
 
 - core strict C11 tests;
 - core AddressSanitizer/UndefinedBehaviorSanitizer runs;
@@ -161,24 +176,31 @@ The 0.1.0 candidate has undergone these checks:
 - idle rearm at 333.3 ms;
 - explicit release/tail cancellation in core tests;
 - mode-switch restart with no new startup step;
-- non-finite memoryless profile containment;
-- complete-patch apply and whitespace checks on the reconstructed pristine source map;
-- strict mock-host C syntax checking of the integration-owned block.
+- non-finite memoryless-profile containment;
+- complete-patch apply and whitespace checks;
+- strict mock-host C syntax checking of the integration-owned block;
+- real Meson configuration against the pinned libinput checkout;
+- real Ninja compilation after fixing the explicit timestamp type boundary;
+- verified installation with the `ldconfig` cache Build ID matching the build artifact;
+- a fresh normal graphical boot after that installation;
+- post-reboot live process mappings whose `libinput.so.10` Build ID matches the build artifact;
+- basic interactive scrolling working in that verified session.
 
-The candidate also uses separately verified exact upstream contexts for its Meson dependency hunk and core-header include hunk.
+## Validation still useful before calling 0.1.0 fully field-tested
 
-## Required validation still pending
+The core-backed build is no longer merely compile-tested: it has completed a real verified runtime boot. The remaining distinction from the long-used 0.0.14 baseline is depth of field testing, not whether the integration can build or start.
 
-Core unit tests do not substitute for the host build. Before 0.1.0 supersedes 0.0.14 as the field-tested release, run on the complete pristine pinned libinput source:
+Before treating 0.1.0 as equally field-tested, re-exercise the full integration-owned behavior matrix explicitly:
 
 ```text
-core submodule linked into subprojects/
-git apply --check
-git apply
-git diff --check
-Meson configure
-Ninja compile
-interactive free/locked/Shift/Scroll-Lock/middle-suppression checks
+free scrolling
+locked scrolling
+post-middle Shift toggle in both directions
+Shift held before middle remains visible/non-toggle
+Scroll Lock default-mode toggle and latching
+middle-click suppression true/false
+release/tail cancellation
+adaptive profile reset behavior if adaptive is used
 ```
 
-The environment that generated the candidate lacked Meson and could not install it from the network, so a successful full libinput build has **not** been claimed.
+Also fold the temporary Meson/timestamp corrections into the canonical 0.1.0 replacement patch and regenerate its release checksums before final release packaging.
