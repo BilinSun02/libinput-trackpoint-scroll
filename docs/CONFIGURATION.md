@@ -10,7 +10,7 @@ The integration reads:
 
 once when each eligible TrackPoint device is initialized. There is no live reload.
 
-For configuration-only changes, replug a removable device or restart the graphical session for a built-in device. After installing a rebuilt library, restart the session so the compositor maps the new shared object.
+For configuration-only changes, replug a removable device or restart the graphical session for a built-in device. After installing a rebuilt library, restart the session so the compositor maps the new shared object, then verify the mapped Build ID when runtime identity matters.
 
 ## Recommended configuration versus compiled fallback
 
@@ -20,7 +20,7 @@ The recommended tested file selects:
 profile=hyperbolic
 ```
 
-The current pre-refactor integration code's **compiled fallback profile**, used when no valid `profile=` override is read, is `adaptive`. These are intentionally distinct facts. The core library itself does not choose an integration profile; profile selection is adapter policy.
+The current integration's **compiled fallback profile**, used when no valid `profile=` override is read, is `adaptive`. These are intentionally distinct facts. The core library itself does not choose an integration profile; profile selection is adapter policy.
 
 Other compiled/current defaults include:
 
