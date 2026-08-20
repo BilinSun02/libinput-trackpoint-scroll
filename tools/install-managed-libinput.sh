@@ -16,12 +16,29 @@ if [ ! -f "$builddir/build.ninja" ]; then
     exit 1
 fi
 
-for cmd in ninja ldconfig readelf; do
+for cmd in ninja ldconfig readelf meson python3; do
     command -v "$cmd" >/dev/null 2>&1 || {
         echo "error: $cmd not found" >&2
         exit 1
     }
 done
+
+prefix=$(meson introspect "$builddir" --buildoptions | python3 -c '
+import json, sys
+options = json.load(sys.stdin)
+for option in options:
+    if option.get("name") == "prefix":
+        print(option.get("value", ""))
+        break
+')
+if [ "$prefix" != "/usr" ]; then
+    echo "error: build directory prefix is '$prefix', expected '/usr'" >&2
+    echo "       this project replaces the loader-selected system libinput; a" >&2
+    echo "       /usr/local build may install successfully without being selected." >&2
+    echo "       Reconfigure before installing:" >&2
+    echo "       meson setup --reconfigure '$builddir' '$repo_root/.work/libinput' --prefix=/usr" >&2
+    exit 1
+fi
 
 buildlib=$(find "$builddir" -maxdepth 1 -type f -name 'libinput.so.*.*.*' -print | head -n 1)
 if [ -z "$buildlib" ] || [ ! -f "$buildlib" ]; then
@@ -40,14 +57,15 @@ if [ -z "$soname" ]; then
     exit 1
 fi
 
+echo "build prefix:  $prefix"
 echo "build library: $buildlib"
 echo "build SONAME:  $soname"
 echo "build ID:      $build_id"
 
 echo "installing replacement libinput from: $builddir"
-# Deliberately do not uninstall the previous /usr/local build first. Installing
-# a replacement with the same prefix/SONAME avoids creating an unnecessary
-# interval in which the graphical stack has no custom libinput installed.
+# Deliberately do not uninstall the loader-selected system build first.
+# Installing the replacement directly avoids a period in which GNOME/Xorg
+# cannot resolve libinput.so.10 at all.
 ninja -C "$builddir" install
 
 echo "refreshing dynamic-loader cache"
