@@ -25,18 +25,13 @@ done
 
 prefix=$(meson introspect "$builddir" --buildoptions | python3 -c '
 import json, sys
-options = json.load(sys.stdin)
-for option in options:
+for option in json.load(sys.stdin):
     if option.get("name") == "prefix":
         print(option.get("value", ""))
         break
 ')
-if [ "$prefix" != "/usr" ]; then
-    echo "error: build directory prefix is '$prefix', expected '/usr'" >&2
-    echo "       this project replaces the loader-selected system libinput; a" >&2
-    echo "       /usr/local build may install successfully without being selected." >&2
-    echo "       Reconfigure before installing:" >&2
-    echo "       meson setup --reconfigure '$builddir' '$repo_root/.work/libinput' --prefix=/usr" >&2
+if [ -z "$prefix" ]; then
+    echo "error: cannot determine Meson install prefix" >&2
     exit 1
 fi
 
@@ -57,31 +52,75 @@ if [ -z "$soname" ]; then
     exit 1
 fi
 
+paths_tmp=$(mktemp)
+cache_tmp=$(mktemp)
+trap 'rm -f "$paths_tmp" "$cache_tmp"' EXIT HUP INT TERM
+
+# Inspect every Meson destination before installing. A custom build must not
+# silently overwrite files owned by dpkg/apt; package-managed replacement
+# requires an explicit packaging/diversion strategy outside this helper.
+meson introspect "$builddir" --installed | python3 -c '
+import json, sys
+for value in json.load(sys.stdin).values():
+    if isinstance(value, str):
+        print(value)
+' | sort -u > "$paths_tmp"
+
+if command -v dpkg-query >/dev/null 2>&1; then
+    owned=0
+    while IFS= read -r dest; do
+        [ -n "$dest" ] || continue
+        owner=$(dpkg-query -S "$dest" 2>/dev/null | head -n 1 || true)
+        if [ -z "$owner" ]; then
+            case "$dest" in
+                /usr/lib/*) alt=${dest#/usr}; owner=$(dpkg-query -S "$alt" 2>/dev/null | head -n 1 || true) ;;
+                /usr/lib64/*) alt=${dest#/usr}; owner=$(dpkg-query -S "$alt" 2>/dev/null | head -n 1 || true) ;;
+            esac
+        fi
+        if [ -n "$owner" ]; then
+            if [ "$owned" -eq 0 ]; then
+                echo "error: this install would overwrite dpkg-owned paths:" >&2
+            fi
+            echo "       $owner" >&2
+            owned=1
+        fi
+    done < "$paths_tmp"
+
+    if [ "$owned" -ne 0 ]; then
+        echo "       refusing to modify package-managed files." >&2
+        echo "       Use a non-package prefix (the managed default is /usr/local)" >&2
+        echo "       or use an explicit Debian packaging/diversion workflow." >&2
+        exit 1
+    fi
+fi
+
 echo "build prefix:  $prefix"
 echo "build library: $buildlib"
 echo "build SONAME:  $soname"
 echo "build ID:      $build_id"
 
-echo "installing replacement libinput from: $builddir"
-# Deliberately do not uninstall the loader-selected system build first.
-# Installing the replacement directly avoids a period in which GNOME/Xorg
-# cannot resolve libinput.so.10 at all.
+before=$(ldconfig -p 2>/dev/null | awk -v soname="$soname" '$1 == soname {print $NF; exit}')
+if [ -n "$before" ]; then
+    echo "before install loader selects: $before"
+fi
+
+echo "installing libinput from: $builddir"
+# Do not uninstall another custom libinput first. Installing into this build's
+# own prefix is non-destructive to custom copies elsewhere; after ldconfig the
+# Build-ID check below determines which copy actually wins.
 ninja -C "$builddir" install
 
 echo "refreshing dynamic-loader cache"
 ldconfig
 
-tmp=$(mktemp)
-trap 'rm -f "$tmp"' EXIT HUP INT TERM
-ldconfig -p | awk '$1 ~ /^libinput\.so(\.|$)/ {print $NF}' | sort -u > "$tmp"
-
-if [ ! -s "$tmp" ]; then
+ldconfig -p | awk '$1 ~ /^libinput\.so(\.|$)/ {print $NF}' | sort -u > "$cache_tmp"
+if [ ! -s "$cache_tmp" ]; then
     echo "error: ldconfig reports no libinput shared library after install" >&2
     exit 1
 fi
 
-bad=0
 echo "loader-visible libinput libraries:"
+bad=0
 while IFS= read -r path; do
     if [ ! -e "$path" ]; then
         echo "  BROKEN: $path" >&2
@@ -90,8 +129,7 @@ while IFS= read -r path; do
     fi
     resolved=$(readlink -f "$path" 2>/dev/null || printf '%s' "$path")
     echo "  $path -> $resolved"
-done < "$tmp"
-
+done < "$cache_tmp"
 if [ "$bad" -ne 0 ]; then
     echo "error: at least one loader-visible libinput path is missing" >&2
     exit 1
@@ -117,9 +155,11 @@ echo "loader selects: $selected"
 echo "selected ID:    $selected_id"
 
 if [ "$selected_id" != "$build_id" ]; then
-    echo "error: loader-selected $soname does not match the library just built" >&2
-    echo "       build ID:    $build_id" >&2
-    echo "       selected ID: $selected_id" >&2
+    echo "error: another libinput installation still wins dynamic linking" >&2
+    echo "       selected path: $selected" >&2
+    echo "       build ID:      $build_id" >&2
+    echo "       selected ID:   $selected_id" >&2
+    echo "       Do not uninstall it blindly; identify that installation first." >&2
     echo "       DO NOT restart the graphical session or reboot." >&2
     exit 1
 fi
