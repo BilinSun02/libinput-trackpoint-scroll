@@ -80,7 +80,7 @@ for maps in /proc/[0-9]*/maps; do
         continue
     fi
 
-    same_inode=$(python3 - "$mapped" "$map_dev" "$map_inode" <<'PY'
+    same_inode=$(python3 - "$mapped" "$map_dev" "$map_inode" 2>/dev/null <<'PY' || true
 import os
 import sys
 
@@ -99,7 +99,7 @@ PY
 )
 
     if [ "$same_inode" != yes ]; then
-        printf '  %-10s pid=%-7s %-24s mapped inode no longer equals path: %s\n' \
+        printf '  %-10s pid=%-7s %-24s mapped inode cannot be tied to current path: %s\n' \
             "UNVERIFIED" "$pid" "$comm" "$mapped"
         unverified=1
         continue
