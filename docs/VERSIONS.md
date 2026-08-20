@@ -49,9 +49,10 @@ Completed validation includes:
 - verified installation where the first `ldconfig` cache entry for `libinput.so.10` has the build artifact's ELF Build ID;
 - a fresh normal graphical boot after that installation;
 - post-reboot live process mappings whose `libinput.so.10` Build ID matches the build artifact;
-- basic interactive scrolling working in that verified session.
+- host behavior checks for free scrolling/release cancellation, Shift-before-middle, post-middle Shift toggle semantics, Scroll Lock default/latching, and middle-click suppression enabled/disabled;
+- adaptive reset wiring verified directly: the integration transform reset calls the upstream adaptive filter restart, and the shared engine invokes that reset on gesture begin/end, in-gesture restart, and idle burst rearm.
 
-Therefore 0.1.0 has passed real host build and initial runtime validation. It is still a development/release candidate rather than the long-field-tested baseline: the full integration-owned behavior matrix should be explicitly re-exercised, and the temporary integration corrections should be folded into the canonical release patch before 0.1.0 is treated as fully release-ready.
+Therefore 0.1.0 has passed real host build, verified runtime identity, and the integration-owned behavior matrix. It remains a release candidate only because the temporary Meson and timestamp-boundary corrections still need to be folded into one canonical replacement patch and that final artifact must receive a clean pristine-checkout build/install/runtime verification.
 
 ## Rule for future versions
 
