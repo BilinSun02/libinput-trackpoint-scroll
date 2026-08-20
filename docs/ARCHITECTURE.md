@@ -16,7 +16,7 @@ This repository owns the libinput adapter around that engine:
 
 - selecting eligible TrackPoint button-scroll devices;
 - button-scroll lifecycle and the 1 ms activation timeout;
-- translating `usec_t` and libinput coordinate structures to/from core types;
+- translating libinput `usec_t` and coordinate structures to/from core types;
 - timer scheduling;
 - runtime config parsing;
 - the upstream adaptive-profile wrapper;
@@ -36,11 +36,11 @@ raw REL_X / REL_Y during middle-button scrolling
         v
 libinput adapter
         |
-        | timestamp + raw relative displacement
+        | uint64_t microseconds + raw relative displacement
         v
 core engine
         |
-        | fixed startup output and/or reconstructed 2 ms vector
+        | fixed startup output and/or reconstructed logical-tick vector
         v
 transform
         |- core memoryless profile, or
@@ -52,7 +52,18 @@ libinput adapter
         `- locked: evdev_post_scroll() buildup/axis lock
 ```
 
-The core's `tick_us` is a logical period. The libinput adapter may continue using `device->scroll.timer`, but scheduling mechanics must not leak into the core API.
+The core's `tick_us` is a logical period. The libinput adapter continues using `device->scroll.timer`; host scheduler mechanics do not leak into the core API.
+
+## Timestamp type boundary
+
+Upstream libinput deliberately uses the strong `usec_t` newtype while the portable core deliberately uses plain `uint64_t` microsecond timestamps. The adapter converts explicitly at every boundary:
+
+```text
+libinput -> core: usec_as_uint64_t(...)
+core -> libinput: usec_from_uint64_t(...)
+```
+
+Do not move `usec_t` into the core API merely to silence host compile errors. The strong type is useful because it catches missing adapter conversions.
 
 ## Adapter state that remains integration-specific
 
@@ -76,20 +87,22 @@ Locked mode deliberately delegates to `evdev_post_scroll()` rather than duplicat
 
 ### Adaptive transform
 
-The adaptive profile is currently backed by libinput's TrackPoint accelerator and velocity history. It should be presented to the core through the stateful transform callback/reset interface. Do not copy host filter internals into the core merely to make every profile live in one repository.
+The adaptive profile is backed by libinput's TrackPoint accelerator and velocity history. It is presented to the core through the stateful transform callback/reset interface. Host filter internals remain outside the core.
 
 ## Refactor rules
 
 - Core types must be translated at the adapter boundary; do not add libinput types to core headers.
 - Keep the shared engine opaque.
-- Do not make the core parse `/etc/libinput/trackpoint-scroll.conf`; parse here and fill a core config/profile structure.
-- Reset stateful transforms wherever the core signals a burst/gesture reset.
-- Preserve the existing public-post bookkeeping around locked-mode buildup.
+- Do not make the core parse `/etc/libinput/trackpoint-scroll.conf`; parse here and fill core configuration/profile structures.
+- Reset stateful transforms wherever gesture/burst policy requires it.
+- Preserve public-post bookkeeping around locked-mode buildup.
 - Preserve release cancellation semantics.
 - Preserve the existing internal spelling `evdev_notify_axis_continous` at call sites unless the upstream symbol itself is changed consistently.
 
 ## Current migration state
 
-The deployed v14 patch contains the algorithms inline in `src/evdev.c`. The first refactor milestone extracts those reusable algorithms into `core/`; the next integration patch should replace the duplicated inline startup/grid/memoryless-profile implementation with core API calls while leaving libinput-specific policy here.
+The historical 0.0.14/v14 patch contains startup/reconstruction/memoryless-profile algorithms inline in `src/evdev.c` and remains the behavioral reference.
 
-Do not produce a production patch by editing or reconstructing old hunk text from prose. Start from the pristine pinned source, apply deliberate integration changes, and compile the result.
+The 0.1.0 candidate has completed the extraction milestone: the reusable implementation comes from the pinned `core/` submodule, while libinput-specific policy remains in the adapter. The candidate has successfully configured and compiled against the pinned real libinput tree and has booted a fresh graphical session with the built library verified by ELF Build ID in both the loader cache and live process mappings.
+
+This does not make every future change safe automatically. Production patches must still be regenerated/validated against the pristine pinned upstream tree, and runtime identity must be proven rather than inferred from installation success alone.
