@@ -45,12 +45,17 @@ Do not claim a full integration build happened unless it actually did.
 
 ## Installation discipline
 
-- Replacing one `/usr/local` project build with another compatible build should install the replacement directly; do not normally run `ninja uninstall` first.
+- The managed default prefix is `/usr/local`; do not hardcode `/usr` merely to force loader precedence.
+- The installer must derive the configured prefix/install map from Meson rather than assume where a previous custom libinput lives.
+- Before installation on Debian/Ubuntu, refuse to overwrite any destination owned by dpkg. Direct package-path replacement requires an explicit Debian packaging or `dpkg-divert` design.
+- Do not automatically remove another self-compiled libinput in a different prefix. Install the candidate, run `ldconfig`, and fail closed if another copy still wins dynamic linking.
+- Do not normally run `ninja uninstall` before replacing a compatible custom build in the same prefix; avoid creating an interval where no usable SONAME exists.
 - After installing a shared-library replacement, run `ldconfig` before restarting the graphical session.
-- Verify loader-visible `libinput.so*` paths resolve to real files before logout/reboot. `tools/install-managed-libinput.sh` is the preferred managed-tree path.
-- `ninja uninstall` is for intentionally removing a custom build, not the ordinary first step of an upgrade.
-- If a graphical session fails after installation, preserve evidence before recovery changes when practical: record `journalctl --list-boots`, inspect the failed boot's display-manager and high-priority logs, and capture `ldconfig -p` output.
-- Do not promote a plausible loader/cache explanation to a confirmed cause without evidence. Preserve unresolved installation incidents as unresolved.
+- Loader verification is by exact ELF Build ID of the selected SONAME, not merely by checking that some `libinput.so.10` exists.
+- If loader selection does not match the build artifact, print the selected path and do not advise logout/reboot.
+- Package upgrades may rebuild the cache or change the distro library. Reverify loader selection after relevant upgrades.
+- If a graphical session fails after installation, preserve evidence before recovery changes when practical: record `journalctl --list-boots`, inspect the failed boot's display-manager/high-priority logs, and capture `ldconfig -p` output.
+- Do not promote a plausible loader/cache explanation to a confirmed cause without evidence.
 
 ## Naming and source conventions
 
