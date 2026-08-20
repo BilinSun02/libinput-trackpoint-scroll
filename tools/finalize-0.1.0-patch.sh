@@ -89,10 +89,15 @@ expected_files='meson.build
 src/evdev-fallback.c
 src/evdev.c
 src/evdev.h'
-actual_files=$(git -C "$worktree" diff --name-only | sort)
+# File-set membership must not depend on the user's locale/collation rules.
+# The expected list above is in bytewise C-locale order; sort the actual list
+# the same way before comparing it.
+actual_files=$(git -C "$worktree" diff --name-only | LC_ALL=C sort)
 if [ "$actual_files" != "$expected_files" ]; then
     echo "error: corrected candidate touches an unexpected file set:" >&2
     printf '%s\n' "$actual_files" >&2
+    echo "expected:" >&2
+    printf '%s\n' "$expected_files" >&2
     exit 1
 fi
 
