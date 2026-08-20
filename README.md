@@ -19,26 +19,41 @@ The 0.0.14 behavior was validated over weeks of daily use. Its essential propert
 - no-scroll middle clicks are suppressed by default;
 - release stops promptly and cancels any unexpired reconstruction tail.
 
-The reusable motion-processing code lives in the `core/` submodule. This repository owns libinput-specific routing, configuration, keyboard policy, event posting, device setup, build instructions, and patches.
+The reusable motion-processing code lives in the `core/` submodule. This repository owns libinput-specific routing, configuration, keyboard policy, event posting, device setup, build/install tooling, and patches.
 
 ## Version lines
 
 - **0.0.14** — exact historical v14 bundle, known-working baseline, with reusable algorithms still inline in the libinput patch.
-- **0.1.0** — first core-backed line. A complete replacement candidate now exists and consumes the pinned core submodule for startup, reconstruction, and memoryless profile mechanics.
+- **0.1.0** — first core-backed line. A complete replacement candidate consumes the pinned core submodule for startup, reconstruction, and memoryless profile mechanics.
 
 Current 0.1.0 candidate:
 
 ```text
-patch (uncompressed SHA-256):
+stored base patch (uncompressed SHA-256):
 8a2149667755545fa8ff7b378de839bfb90e0728ed01cddfcabf03e3fa17c016
 
 core gitlink:
 133df50ea5ce58e71e3fed3240c26999ee689386
 ```
 
-The patch is stored compressed under `patches/`; see `patches/README.md` and `docs/BUILD_AND_INSTALL.md`.
+The current corrected candidate is the stored base patch plus the documented Meson and timestamp-boundary corrections applied by `tools/prepare-libinput-tree.sh`. Those corrections should be folded into the canonical release patch before final 0.1.0 packaging.
 
-The candidate has passed core unit/sanitizer tests, standalone algorithm-equivalence traces, patch/application checks, real Meson configuration, and a real Ninja compile. Runtime validation is still pending: an apparent successful desktop test was later shown by ELF Build-ID comparison to have loaded the older v14 library. The managed build remains non-destructive under `/usr/local`; the verified installer now runs `ldconfig`, refuses dpkg-owned destinations, and requires the loader-selected `libinput.so.10` to have the build artifact's exact Build ID before a reboot is considered safe.
+## Current validation status
+
+The candidate has passed:
+
+- core unit/sanitizer tests and standalone algorithm-equivalence traces;
+- patch/application checks;
+- real Meson configuration against the pinned libinput checkout;
+- a real Ninja compile;
+- verified installation with the `ldconfig` cache Build ID matching the build artifact;
+- a fresh normal graphical boot;
+- post-reboot live process mappings whose `libinput.so.10` Build ID matches the build artifact;
+- basic interactive scrolling in that verified session.
+
+The earlier apparent successful runtime test after recovery was correctly discarded after Build-ID comparison showed that it was still running v14. The current verified boot is the first runtime validation credited to the core-backed build.
+
+0.1.0 is therefore past the “builds only” stage, but 0.0.14 remains the deeper field-tested fallback until the full integration-owned behavior matrix is explicitly re-exercised and the temporary integration corrections are folded into the canonical patch.
 
 ## Start here
 
@@ -49,8 +64,8 @@ The candidate has passed core unit/sanitizer tests, standalone algorithm-equival
 - `docs/ARCHITECTURE.md` — boundary between the shared engine and libinput integration.
 - `docs/CORE_MIGRATION.md` — extracted-vs-integration ownership and 0.1.0 implementation/validation details.
 - `docs/BUILD_AND_INSTALL.md` — managed-source and manual build/install workflows.
+- `docs/DEBUGGING_AND_MAINTENANCE.md` — traps, validation rules, loader/runtime identity checks, and operational recovery lessons.
 - `docs/DEVICE_SETUP.md` — device classification and udev details.
-- `docs/DEBUGGING_AND_MAINTENANCE.md` — traps, validation rules, and operational checks.
 - `docs/PROJECT_RULES.md` — contribution and documentation conventions.
 
 ## Fast path: prepare a managed libinput tree
@@ -61,9 +76,15 @@ For a fresh clone that does not already have libinput source available, run:
 sh ./tools/prepare-libinput-tree.sh
 ```
 
-This creates the git-ignored `.work/libinput/` checkout from the upstream repository recorded in `UPSTREAM`, checks out the pinned commit, initializes the shared submodule, links it into the upstream Meson tree, verifies/materializes the 0.1.0 patch, and applies it. It stops at a ready-to-configure source tree and never silently resets unrecognized local changes.
+This creates the git-ignored `.work/libinput/` checkout from the upstream repository recorded in `UPSTREAM`, checks out the pinned commit, initializes the shared submodule, links it into the upstream Meson tree, verifies/materializes the 0.1.0 patch, and applies the current corrections. It stops at a ready-to-configure source tree and never silently resets unrecognized local changes.
 
 The manual workflow remains supported for users who already maintain a separate libinput checkout; see `docs/BUILD_AND_INSTALL.md`.
+
+After installation and a fresh graphical-session start, verify actual runtime mappings with:
+
+```bash
+sh ./tools/verify-runtime-libinput.sh
+```
 
 ## Documentation rule
 
