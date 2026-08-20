@@ -56,6 +56,7 @@ Do not claim a full integration build or runtime test unless it actually happene
 - Describe `ldconfig -p` results as **cache selection**, not proof of what a running process mapped.
 - Cache verification is by exact ELF Build ID of the first cache entry for the required SONAME, not merely by checking that some `libinput.so.10` exists.
 - Runtime verification after restart must inspect actual process mappings (e.g. `/proc/<pid>/maps`) and compare their ELF Build IDs with the build artifact. `tools/verify-runtime-libinput.sh` is the preferred helper.
+- Before reopening a pathname from `/proc/<pid>/maps` to inspect its Build ID, verify that the mapping's device/inode still matches the file currently at that path. A replacement install can otherwise make an old mapping appear to have the new file's Build ID.
 - If cache or runtime identity does not match the build artifact, report the observed path/Build ID and do not claim the candidate is active.
 - Package upgrades may rebuild the cache or change the distro library. Reverify cache/runtime selection after relevant upgrades.
 - If a graphical session fails after installation, preserve evidence before recovery changes when practical: record `journalctl --list-boots`, inspect the failed boot's relevant logs, and capture `ldconfig -p` output.
