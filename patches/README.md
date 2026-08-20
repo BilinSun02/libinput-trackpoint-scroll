@@ -66,9 +66,11 @@ The earlier post-recovery successful boot is **not** counted: Build-ID compariso
 
 The failed normal boot was an installation/loader-resolution failure rather than a scrolling-code crash: GNOME Shell and the Xorg libinput driver repeatedly failed with `libinput.so.10: cannot open shared object file`.
 
-The first 0.1.0 install placed the library under `/usr/local`, but the old v14 installation had been removed first and `ldconfig` was not run afterward. Recovery restored v14; a later boot still used v14. The evidence did **not** establish that `/usr/local` was intrinsically unusable.
+The first 0.1.0 install placed the library under `/usr/local` after the old v14 installation had been removed. That manual sequence did not include a separate explicit `ldconfig`/cache-verification step before reboot. The failed-boot journal proves SONAME resolution failed, but it does not by itself prove the precise internal behavior of the Meson/Ninja install step or justify a stronger single-cause claim.
 
-The corrected workflow keeps the non-package default `/usr/local`, runs `ldconfig`, refuses dpkg-owned destinations, verifies the first cache entry's Build ID before restart, and verifies actual process mappings after restart. See `tools/install-managed-libinput.sh`, `tools/verify-runtime-libinput.sh`, and `docs/BUILD_AND_INSTALL.md`.
+Recovery restored v14; a later boot still used v14. Inspection then showed the `/usr/local` candidate existed and its directory was configured in `ld.so.conf`, while the cache still selected v14. The evidence therefore did **not** establish that `/usr/local` was intrinsically unusable.
+
+The corrected workflow keeps the non-package default `/usr/local`, performs an explicit `ldconfig`, refuses dpkg-owned destinations, verifies the first cache entry's Build ID before restart, and verifies actual process mappings after restart. See `tools/install-managed-libinput.sh`, `tools/verify-runtime-libinput.sh`, and `docs/BUILD_AND_INSTALL.md`.
 
 Do not use `ldconfig -p` cache order as proof of what an already-running process mapped. Do not automatically remove other custom installations. Do not trust an old build tree's uninstall manifest after another overlapping installation has replaced the same destinations.
 
