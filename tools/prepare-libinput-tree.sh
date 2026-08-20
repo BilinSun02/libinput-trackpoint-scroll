@@ -92,7 +92,7 @@ upstream: libinput $LIBINPUT_VERSION @ $UPSTREAM_COMMIT
 
 Next step:
   meson setup '$tree/builddir' '$tree' \\
-    --prefix=/usr \\
+    --prefix=/usr/local \\
     --buildtype=release \\
     -Dlibwacom=false \\
     -Dtests=false \\
