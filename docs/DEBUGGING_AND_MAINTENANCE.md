@@ -1,5 +1,39 @@
 # Debugging and maintenance
 
+## Prove the loaded library before debugging behavior
+
+Do not infer which libinput is active from a successful `ninja install`, from the existence of a file under an expected prefix, or from `ldconfig -p` alone.
+
+There are three distinct facts:
+
+1. **installed file identity** — what bytes exist at a filesystem path;
+2. **cache selection** — which SONAME entry appears first in `ldconfig -p` after `ldconfig`;
+3. **runtime mapping** — which file an actual running process has mapped in `/proc/<pid>/maps`.
+
+For post-reboot validation use:
+
+```bash
+sh ./tools/verify-runtime-libinput.sh
+```
+
+The helper compares the build artifact, the first cache entry, and readable process mappings by ELF Build ID. Runtime claims should be based on actual process mappings, not cache terminology.
+
+A previous false-positive validation happened because the desktop booted and scrolling worked, but later Build-ID comparison showed the running session was still using the older v14 library. That boot was correctly discarded as validation of 0.1.0.
+
+## Preserve failed-boot evidence
+
+If a graphical session fails after a custom libinput install, preserve the failed boot's journal before changing installations when practical:
+
+```bash
+journalctl --list-boots
+journalctl -b <failed-boot> --no-pager | \
+  grep -Ei 'libinput|gnome-shell|mutter|gdm|gdm-wayland|gdm-session|segfault|coredump|shared object|undefined symbol|ld\.so'
+```
+
+The 0.1.0 install incident was eventually identified from journal lines showing GNOME Shell and the Xorg libinput driver could not resolve `libinput.so.10`. Repeated GDM `GDM_IS_REMOTE_DISPLAY` assertions were also present on successful boots and were incidental rather than causal.
+
+Do not promote a plausible explanation such as “missing `ldconfig` caused it” until the evidence supports that level of specificity. In the incident, the durable fact was missing SONAME resolution on the failed boot; the corrected workflow then demonstrated that an explicit cache refresh plus verification allowed the `/usr/local` build to be selected and run successfully.
+
 ## Do not infer compositor settings from standalone tools
 
 `libinput list-devices` and `libinput debug-events` create their own libinput contexts. Their displayed defaults are not the live GNOME/Mutter pointing-stick preferences.
@@ -8,7 +42,7 @@ Use `gsettings` for GNOME's live configuration. When testing `debug-events`, sup
 
 ## Prove the execution path before tuning
 
-A major earlier debugging lesson was that plausible public output does not prove the intended internal path is active. For routing problems, instrument boundaries explicitly:
+Plausible public output does not prove the intended internal path is active. For routing problems, instrument boundaries explicitly:
 
 1. route selection in the button-scroll motion path;
 2. raw feed into the shared engine;
@@ -19,6 +53,20 @@ A major earlier debugging lesson was that plausible public output does not prove
 Useful fields include device, timestamp, state, raw vector, estimated interval, tick count, reconstructed vector, transformed vector, and whether public output was posted.
 
 Do not tune transfer-function constants while the loaded library or execution route is uncertain.
+
+## Safe replacement and uninstall
+
+Do not normally use `ninja uninstall` before installing a compatible replacement. Besides creating a temporary interval where the SONAME may disappear, uninstall uses the invoking build tree's install manifest. If another build has since installed over the same destinations, the old uninstall can remove the newer build's files.
+
+After installing a shared-library candidate:
+
+```bash
+sudo ldconfig
+```
+
+then verify cache identity before restarting, and verify live process mappings after the restart.
+
+Do not automatically remove a different self-compiled libinput simply because it wins cache order. Identify its prefix/provenance first. Do not overwrite dpkg-owned paths without an explicit packaging/diversion strategy.
 
 ## Cursor and scroll acceleration are independent
 
