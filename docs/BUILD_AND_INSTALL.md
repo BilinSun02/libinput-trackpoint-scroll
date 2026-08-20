@@ -2,7 +2,7 @@
 
 ## Pinned source
 
-The authoritative current upstream libinput repository, version, and commit are recorded in the root-level `UPSTREAM` file. Automation sources that file directly. Do not duplicate the current pin in scripts or prose that is meant to track the active development line.
+The authoritative current upstream libinput repository, version, and commit are recorded in the root-level `UPSTREAM` file. Automation sources that file directly. Do not duplicate the current pin in scripts or prose meant to track the active development line.
 
 To inspect it:
 
@@ -26,7 +26,7 @@ For an existing clone:
 git submodule update --init --recursive
 ```
 
-The integration patch/build glue consumes `core/` from the exact gitlink recorded by this repository, not an arbitrary neighboring checkout.
+The integration patch/build glue consumes `core/` from the exact gitlink recorded by this repository.
 
 ## Managed-source fast path
 
@@ -52,9 +52,9 @@ meson setup .work/libinput/builddir .work/libinput \
 ninja -C .work/libinput/builddir
 ```
 
-`/usr/local` is a default, not a statement about where every existing libinput must live. The installer discovers the configured prefix from Meson and verifies the actual loader-selected library after installation.
+`/usr/local` is a default, not an assumption about where every existing libinput lives. The installer reads the configured prefix and complete install map from Meson.
 
-Do not configure the managed helper to overwrite `/usr` merely to force precedence over a distro library. On Debian/Ubuntu, `/usr` library/tool paths are commonly owned by dpkg packages; silently replacing them makes package upgrades/reinstalls able to overwrite the custom build and makes custom uninstall operations able to damage package-managed files.
+Do not configure the managed helper to overwrite `/usr` merely to force precedence over a distro library. On Debian/Ubuntu, `/usr` paths are commonly owned by dpkg packages; silently replacing them makes package upgrades/reinstalls able to overwrite the custom build and makes custom uninstall operations able to damage package-managed files.
 
 ## Manual workflow
 
@@ -64,9 +64,9 @@ A manually maintained libinput checkout may use another prefix. The verified ins
 sudo sh ./tools/install-managed-libinput.sh /path/to/builddir
 ```
 
-The helper is prefix-agnostic but package-aware. Before installing, it inspects Meson's complete installed-file map and, when `dpkg-query` is available, refuses the operation if any destination is owned by a Debian package.
+The helper is prefix-agnostic but package-aware. Before installing, it inspects Meson's installed-file map and, when `dpkg-query` is available, refuses the operation if a destination is owned by a Debian package.
 
-If direct replacement of package-managed files is intentionally required, use an explicit Debian packaging or `dpkg-divert` design instead of bypassing that refusal. Debian provides diversions specifically for controlled local/package overrides; arbitrary writes over dpkg-owned files are not the managed workflow.
+If direct replacement of package-managed files is intentionally required, use an explicit Debian packaging or `dpkg-divert` design rather than bypassing that refusal.
 
 ## Install and activate safely
 
@@ -78,61 +78,91 @@ sudo sh ./tools/install-managed-libinput.sh
 
 The installer performs these checks/actions in order:
 
-1. reads the Meson prefix and complete installed-file map;
+1. reads the Meson prefix and installed-file map;
 2. refuses to overwrite dpkg-owned destinations;
-3. records the currently loader-selected `libinput.so.10`, if any;
+3. records the current first `ldconfig` cache entry for the required SONAME, if any;
 4. installs into the build's configured prefix without first uninstalling another libinput elsewhere;
 5. runs `ldconfig`;
-6. verifies loader-visible `libinput.so*` paths exist;
-7. compares the ELF Build ID of the loader-selected SONAME with the build artifact.
+6. verifies cache-visible `libinput.so*` paths exist;
+7. compares the ELF Build ID of the first `ldconfig` cache entry for the SONAME with the build artifact.
 
-Only an exact Build-ID match produces:
+Only an exact cache Build-ID match produces:
 
 ```text
 install verification passed
 safe to restart the graphical session or reboot
 ```
 
-### Existing self-compiled libinput elsewhere
+### Cache selection is not runtime proof
 
-Do not guess or hardcode where the previous custom build lives.
+`ldconfig -p` describes the loader cache. It does not prove what an already-running process has mapped, and process-specific RPATH/RUNPATH/environment can in principle affect resolution.
 
-If another self-compiled libinput in a different prefix still wins dynamic linking after `ldconfig`, the installer stops with the selected path and Build-ID mismatch. It does **not** uninstall that installation automatically. Identify its provenance/build tree first, then decide whether to uninstall it, change loader configuration, or intentionally keep it.
+After a fresh graphical-session start or reboot, verify actual process mappings with:
+
+```bash
+sh ./tools/verify-runtime-libinput.sh
+```
+
+That helper compares the build artifact, first cache entry, and every readable running process mapping of the required libinput SONAME by ELF Build ID. Runtime validation is credited only when an actual process mapping matches the build artifact.
+
+## Existing self-compiled libinput elsewhere
+
+Do not guess or hardcode where a previous custom build lives.
+
+If another self-compiled libinput in a different prefix is still first in the `ldconfig` cache after installation, the installer stops with the selected path and Build-ID mismatch. It does **not** uninstall that installation automatically. Identify its provenance/build tree first, then decide whether to uninstall it, change loader configuration, or intentionally keep it.
 
 If the previous custom build uses the same non-package prefix and destinations, installing the replacement normally replaces those files directly; there is no need for an uninstall-first gap.
 
-### Existing dpkg/apt-managed libinput
+### Do not trust stale uninstall manifests
+
+`ninja uninstall` uses the install manifest from the build tree that invokes it. It does not know whether another build subsequently replaced files at the same destinations.
+
+Therefore an old build tree's uninstall can delete a newer build's files when their install paths overlap. Before uninstalling an old custom build after another build has been installed, inspect the old install manifest/destinations and confirm they are not now owned by the replacement.
+
+This is a second reason, beyond avoiding a temporary missing-SONAME state, not to use `uninstall -> install` as the normal upgrade sequence.
+
+## Existing dpkg/apt-managed libinput
 
 A normal Ubuntu/Debian libinput installation should remain owned and maintained by dpkg/apt. The managed default under `/usr/local` does not intentionally overwrite it.
 
-After installing the custom build, `ldconfig` determines the cache seen by new processes. The Build-ID check is authoritative for this workflow: if the distro library still wins, the installer fails and says not to reboot. Do not solve that mismatch by blindly writing the custom library over `/usr`.
+After installing the custom build, `ldconfig` determines cache order for ordinary new processes. If the distro library remains first in the cache, the installer fails and says not to reboot. Do not solve that mismatch by blindly writing the custom library over `/usr`.
 
-Package upgrades can rebuild the loader cache or change the distro library later. Re-run the verification installer (or at minimum repeat the loader/Build-ID checks) after relevant package upgrades before assuming the custom library is still selected.
+Package upgrades can rebuild the loader cache or change the distro library later. Re-run the install verification or at minimum repeat the cache/runtime Build-ID checks after relevant package upgrades before assuming the custom library is still active.
 
-## Loader diagnostics
+## Loader and runtime diagnostics
 
-Useful checks are:
+Cache/build checks:
 
 ```bash
 ldconfig -p | grep 'libinput\.so.10'
 readelf -n .work/libinput/builddir/libinput.so.10.13.0 | grep 'Build ID'
 ```
 
-A running process keeps the library it mapped at session start, so after a verified install start a fresh graphical session before judging runtime behavior.
+Actual runtime check:
 
-If the graphical session fails after an install, preserve the failed boot's journal. An error such as:
+```bash
+sh ./tools/verify-runtime-libinput.sh
+```
+
+A running process keeps the library it mapped at session start. Installing a new library does not change that mapping retroactively.
+
+If the graphical session fails after an install, preserve the failed boot's journal before recovery changes when practical. An error such as:
 
 ```text
 libinput.so.10: cannot open shared object file: No such file or directory
 ```
 
-is an installation/loader failure. An `undefined symbol` or compositor crash after the correct Build ID has been loaded points instead toward ABI/runtime behavior.
+is an installation/loader-resolution failure. An `undefined symbol` or compositor crash after the correct Build ID is actually mapped points instead toward ABI/runtime behavior.
 
 ## Lesson from the 0.1.0 validation incident
 
-The first 0.1.0 installation was placed under `/usr/local`, but the old v14 system-path installation was uninstalled first and `ldconfig` was not run after installing the new build. The next boot could not resolve `libinput.so.10`. Recovery then restored v14, and a later successful desktop boot was shown by Build-ID comparison to still be using v14.
+The first 0.1.0 installation was placed under `/usr/local`, but the old v14 system-path installation was uninstalled first and `ldconfig` was not run after installing the new build. The next boot could not resolve `libinput.so.10`. Recovery restored v14, and a later successful desktop boot was shown by Build-ID comparison to still be using v14.
 
-The evidence does **not** establish that `/usr/local` itself is unusable. At the time of inspection, the custom `/usr/local` library existed and its directory was configured in `ld.so.conf`, but the current cache still selected the system/v14 copy. The correct lesson is to make cache refresh and exact loader verification mandatory, not to hardcode `/usr`.
+The evidence did **not** establish that `/usr/local` itself was unusable. The custom `/usr/local` library existed and its directory was configured in `ld.so.conf`; the correct durable lesson was to make cache refresh and exact identity verification mandatory, not to hardcode `/usr`.
+
+After the installer was corrected, the same `/usr/local` core-backed build was installed, its first `ldconfig` cache entry matched the build artifact's Build ID, the machine rebooted normally, and post-reboot live process mappings matched the same Build ID. Basic scrolling worked in that verified session.
+
+Historical intermediate hypotheses such as “the core-backed library itself crashes GNOME” or “`/usr/local` cannot be used” are not current conclusions.
 
 ## Runtime configuration reload
 
