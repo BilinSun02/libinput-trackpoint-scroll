@@ -19,10 +19,10 @@ The root-level `UPSTREAM` file is the single source of truth for the current dev
 
 - Automation that needs the current pin must source or parse `UPSTREAM`; do not embed another current commit/version literal in scripts.
 - Human-facing documentation that describes the current target should refer readers to `UPSTREAM` rather than duplicate the pin.
-- Historical release records may retain their immutable historical target metadata because that describes the release, not the current development pin.
+- Historical release records may retain immutable historical target metadata because that describes the release, not the current development pin.
 - Upstream-source-shape expectations must be keyed by commit under `compat/libinput/<LIBINPUT_COMMIT>/`; scripts must not silently reuse counts or assumptions validated against another libinput revision.
 - A re-pin is intentionally incomplete until the new commit has its own reviewed compatibility/expectations data. Missing commit-specific data must fail closed rather than inheriting the previous pin's assumptions.
-- Re-pinning upstream requires changing `UPSTREAM` first, then validating/regenerating any version-specific patches, compatibility manifests, or artifacts whose contents inherently depend on that upstream revision.
+- Re-pinning upstream requires changing `UPSTREAM` first, then validating/regenerating version-specific patches, compatibility manifests, or artifacts whose contents depend on that upstream revision.
 
 ## Production patch discipline
 
@@ -35,27 +35,31 @@ git apply --check
 full Meson configuration
 full Ninja build
 git diff --check
+safe install/cache verification
+fresh-session runtime mapping verification
 interactive behavioral smoke test
-safe install/loader verification
 ```
 
 Synthetic/reconstructed hunk preimages are useful secondary diagnostics only. They are not sufficient release validation.
 
-Do not claim a full integration build happened unless it actually did.
+Do not claim a full integration build or runtime test unless it actually happened with the intended binary identified.
 
 ## Installation discipline
 
-- The managed default prefix is `/usr/local`; do not hardcode `/usr` merely to force loader precedence.
+- The managed default prefix is `/usr/local`; do not hardcode `/usr` merely to force cache precedence.
 - The installer must derive the configured prefix/install map from Meson rather than assume where a previous custom libinput lives.
-- Before installation on Debian/Ubuntu, refuse to overwrite any destination owned by dpkg. Direct package-path replacement requires an explicit Debian packaging or `dpkg-divert` design.
-- Do not automatically remove another self-compiled libinput in a different prefix. Install the candidate, run `ldconfig`, and fail closed if another copy still wins dynamic linking.
+- Before installation on Debian/Ubuntu, refuse to overwrite destinations owned by dpkg. Direct package-path replacement requires an explicit Debian packaging or `dpkg-divert` design.
+- Do not automatically remove another self-compiled libinput in a different prefix. Install the candidate, run `ldconfig`, and fail closed if another copy remains first in the cache.
 - Do not normally run `ninja uninstall` before replacing a compatible custom build in the same prefix; avoid creating an interval where no usable SONAME exists.
+- Treat old uninstall manifests as potentially stale. If another build has since installed over the same destinations, an old build tree's `ninja uninstall` may delete the newer build's files.
 - After installing a shared-library replacement, run `ldconfig` before restarting the graphical session.
-- Loader verification is by exact ELF Build ID of the selected SONAME, not merely by checking that some `libinput.so.10` exists.
-- If loader selection does not match the build artifact, print the selected path and do not advise logout/reboot.
-- Package upgrades may rebuild the cache or change the distro library. Reverify loader selection after relevant upgrades.
-- If a graphical session fails after installation, preserve evidence before recovery changes when practical: record `journalctl --list-boots`, inspect the failed boot's display-manager/high-priority logs, and capture `ldconfig -p` output.
-- Do not promote a plausible loader/cache explanation to a confirmed cause without evidence.
+- Describe `ldconfig -p` results as **cache selection**, not proof of what a running process mapped.
+- Cache verification is by exact ELF Build ID of the first cache entry for the required SONAME, not merely by checking that some `libinput.so.10` exists.
+- Runtime verification after restart must inspect actual process mappings (e.g. `/proc/<pid>/maps`) and compare their ELF Build IDs with the build artifact. `tools/verify-runtime-libinput.sh` is the preferred helper.
+- If cache or runtime identity does not match the build artifact, report the observed path/Build ID and do not claim the candidate is active.
+- Package upgrades may rebuild the cache or change the distro library. Reverify cache/runtime selection after relevant upgrades.
+- If a graphical session fails after installation, preserve evidence before recovery changes when practical: record `journalctl --list-boots`, inspect the failed boot's relevant logs, and capture `ldconfig -p` output.
+- Do not promote a plausible loader/cache explanation to a confirmed cause without evidence. Distinguish confirmed facts from hypotheses in durable docs.
 
 ## Naming and source conventions
 
