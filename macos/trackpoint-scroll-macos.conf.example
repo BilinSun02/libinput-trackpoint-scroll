@@ -1,0 +1,22 @@
+# macOS adapter settings. The engine/profile names intentionally mirror the
+# Linux integration where the shared core has an equivalent implementation.
+profile=hyperbolic
+clamp_negative_output=false
+suppress_middle_click=true
+
+# Multiplies the core's continuous output before posting pixel scroll events.
+scroll_scale=1.0
+
+first_step_distance=0.4
+first_step_axis_merge_ms=70.0
+first_step_max_reports=-1
+idle_reset_ms=333.3
+
+affine_k=0.4
+affine_b=0.0
+quadratic_a=0.16
+quadratic_h=0.0
+quadratic_k=0.025
+hyperbolic_a=0.75
+hyperbolic_u=1.6
+hyperbolic_k=-1.175
