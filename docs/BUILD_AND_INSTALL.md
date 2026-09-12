@@ -17,7 +17,7 @@ Do not stack the current patch on top of 0.0.14 or another experimental patch.
 This repository uses a submodule:
 
 ```bash
-git clone --recurse-submodules git@github.com:BilinSun02/libinput-trackpoint-scroll.git
+git clone --recurse-submodules https://github.com/BilinSun02/libinput-trackpoint-scroll.git
 ```
 
 For an existing clone:
